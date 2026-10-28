@@ -509,6 +509,7 @@ html, body {
   pointer-events: auto;
 }
 .chart-overlay[hidden] { display: none !important; }
+.telegraph[hidden] { display: none !important; }
 
 .chart-mount {
   position: absolute;
@@ -520,23 +521,6 @@ html, body {
   padding: 0;
   background: #07090e;
   overflow: hidden;
-}
-
-/* ChartUI root/stage fill the mount completely (no 180px / card chrome) */
-#app.chart-open .chart-mount .career-charts-root {
-  max-width: none !important;
-  width: 100% !important;
-  height: 100% !important;
-  margin: 0 !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-#app.chart-open .chart-mount .cc-stage-wrap {
-  flex: 1 1 auto !important;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
 }
 
 /* Hide arena chrome / HUD while ChartUI owns the view (mute stays reachable) */
