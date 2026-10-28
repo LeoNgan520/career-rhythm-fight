@@ -1,16 +1,20 @@
 /**
- * Career-ChartUI — embeddable player for CombatFeel.
+ * Career-ChartUI — embeddable Ouendan-style player for CombatFeel.
  *
  * CEO API (locked):
  *   window.CareerCharts.start({
  *     type: 'punch' | 'sword' | 'projectile',
- *     onComplete(result) // { judgment, accuracy }
+ *     container,
+ *     onComplete(result) // { judgment, accuracy, tallies?, comboMax? }
  *   })
- *   → { stop(), reset(), getResult() }
+ *   → { stop(), reset(), getResult(), beginPlay() }
  *
- * Bout shim: CareerCharts.play(type, mountEl, onComplete) — also accepts
- *   legacy 'shuriken' (→ projectile). onComplete gets Perfect/Good/Miss + score
- *   for RhythmCharts adapter compatibility.
+ * Type mapping:
+ *   punch      → approach circles 縮圈 (tap)
+ *   sword      → fast sliders (drag along path)
+ *   projectile → spinner 轉盤 (hold + rotate to fill)
+ *
+ * Bout shim: CareerCharts.play(type, mountEl, onComplete)
  */
 (function (global) {
   'use strict';
@@ -22,9 +26,9 @@
   }
 
   const TYPE_LABEL = {
-    punch: '拳 · 圓點',
-    sword: '劍 · 線斬',
-    projectile: '暗器 · 連擊',
+    punch: '拳 · 縮圈',
+    sword: '劍 · 快斬',
+    projectile: '暗器 · 轉盤',
   };
 
   const TYPE_COLOR = {
@@ -33,22 +37,7 @@
     projectile: '#c084fc',
   };
 
-  const DIR_ARROW = { up: '↑', down: '↓', left: '←', right: '→' };
-
   let activeSession = null;
-
-  function laneY(h, lane) {
-    const mid = h * 0.5;
-    // Wider vertical spread on tall/fullscreen stages (應援團 lanes)
-    const spread = Math.max(h * 0.18, Math.min(h * 0.26, 110));
-    const L = lane == null ? 1 : lane;
-    return mid + (L - 1) * spread;
-  }
-
-  /** Note radius / stroke scale from stage height (large notes on fullscreen). */
-  function noteScale(h) {
-    return Math.max(1, Math.min(h / 220, 3.2));
-  }
 
   function buildShell(container, type, withChrome) {
     const root = document.createElement('div');
@@ -113,12 +102,12 @@
 
   function hintFor(type) {
     if (type === 'sword') {
-      return '劍：方向鍵／拖曳斬擊 · Space 普斬 · 長按 hold';
+      return '劍：沿路徑快速拖曳斬擊 · 短距快掃';
     }
     if (type === 'projectile') {
-      return '暗器：連打 Space／點擊 · 爆發段要密';
+      return '暗器：按住並繞中心旋轉填滿轉盤＝格擋';
     }
-    return '拳：Space／點擊格擋 · Z/X 換道 · 長按 hold · 雙擊 double';
+    return '拳：縮圈合邊時點擊圓點 · Space 打當前編號';
   }
 
   /**
@@ -147,7 +136,6 @@
       document.body;
 
     const withChrome = !!options.demoChrome;
-    // Ensure mount fills its host (bout overlay / demo viewport)
     if (container && container !== document.body) {
       if (!container.style.position) container.style.position = 'relative';
       if (!container.style.width) container.style.width = '100%';
@@ -177,8 +165,12 @@
     let raf = 0;
     let flashTimer = 0;
     const particles = [];
-    let pointerDownAt = null;
-    let holdPressArmed = false;
+
+    // Interaction state
+    let activeSlider = null;
+    let activeSpinner = null;
+    let lastPointerAngle = null;
+    let pointerId = null;
 
     function nowMs() {
       return performance.now() - startPerf;
@@ -205,11 +197,10 @@
 
     function resizeCanvas() {
       const wrap = canvas.parentElement;
-      // Fill container (fullscreen overlay / demo viewport mount) — never hardcode 180
       let w = wrap.clientWidth || 0;
       let h = wrap.clientHeight || 0;
-      if (w < 40) w = Math.max(280, (container.clientWidth || window.innerWidth || 960));
-      if (h < 40) h = Math.max(240, (container.clientHeight || window.innerHeight || 540));
+      if (w < 40) w = Math.max(280, container.clientWidth || window.innerWidth || 960);
+      if (h < 40) h = Math.max(240, container.clientHeight || window.innerHeight || 540);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
@@ -218,191 +209,57 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    function spawnBurst(color, jx, jy) {
-      for (let i = 0; i < 10; i++) {
+    function stageSize() {
+      return {
+        w: canvas.clientWidth || Math.max(280, window.innerWidth || 960),
+        h: canvas.clientHeight || Math.max(240, window.innerHeight || 540),
+      };
+    }
+
+    function toNorm(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Engine.clamp01((clientX - rect.left) / (rect.width || 1)),
+        y: Engine.clamp01((clientY - rect.top) / (rect.height || 1)),
+      };
+    }
+
+    function toPx(nx, ny, w, h) {
+      return { x: nx * w, y: ny * h };
+    }
+
+    function noteRadius(w, h) {
+      return Math.max(28, Math.min(w, h) * 0.055);
+    }
+
+    function spawnBurst(color, x, y) {
+      for (let i = 0; i < 12; i++) {
         particles.push({
-          x: jx,
-          y: jy,
-          vx: (Math.random() - 0.25) * 5,
-          vy: (Math.random() - 0.5) * 6,
-          life: 14,
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          life: 16,
           color: color,
         });
       }
     }
 
-    function draw() {
-      const w = canvas.clientWidth || Math.max(280, window.innerWidth || 960);
-      const h = canvas.clientHeight || Math.max(240, window.innerHeight || 540);
-      ctx.clearRect(0, 0, w, h);
-
-      const grd = ctx.createLinearGradient(0, 0, 0, h);
-      grd.addColorStop(0, '#0a0d14');
-      grd.addColorStop(0.5, '#121826');
-      grd.addColorStop(1, '#080a10');
-      ctx.fillStyle = grd;
-      ctx.fillRect(0, 0, w, h);
-
-      // Judge line ~ left third (notes approach right → left) — 應援團-style
-      const judgeX = Math.floor(w * 0.22);
-      const approach = Engine.APPROACH_MS;
-      const tNow = playing ? nowMs() : 0;
-      const accent = TYPE_COLOR[type] || '#e8c56a';
-      const sc = noteScale(h);
-      const padY = Math.max(24, Math.floor(h * 0.06));
-
-      // lane guides
-      for (let L = 0; L < 3; L++) {
-        const y = laneY(h, L);
-        ctx.strokeStyle = 'rgba(255,255,255,0.055)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(judgeX, y);
-        ctx.lineTo(w - 16, y);
-        ctx.stroke();
-      }
-
-      // corridor glow
-      ctx.fillStyle = 'rgba(232,197,106,0.035)';
-      ctx.fillRect(judgeX, padY, w - judgeX - 12, h - padY * 2);
-
-      // Big judge zone
-      const zoneW = Math.max(48, Math.floor(28 * sc));
-      ctx.fillStyle = 'rgba(232,197,106,0.14)';
-      ctx.fillRect(judgeX - zoneW / 2, padY, zoneW, h - padY * 2);
-      ctx.strokeStyle = '#e8c56a';
-      ctx.lineWidth = Math.max(3, 2.5 * sc * 0.55);
-      ctx.shadowColor = 'rgba(232,197,106,0.55)';
-      ctx.shadowBlur = 18;
-      ctx.beginPath();
-      ctx.moveTo(judgeX, padY);
-      ctx.lineTo(judgeX, h - padY);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // notes
-      for (const hit of tracker.hits) {
-        if (hit.resolved) continue;
-        const dt = hit.t - tNow;
-        const x = judgeX + (dt / approach) * (w - judgeX - 28);
-        if (x < -80 || x > w + 80) continue;
-        const y = laneY(h, hit.lane);
-
-        if (hit.phase === 'release') {
-          continue;
-        }
-
-        if (hit.kind === 'hold' && hit.phase === 'press') {
-          const release = tracker.hits.find(function (r) {
-            return r.parentId === hit.parentId && r.phase === 'release';
-          });
-          const endT = release ? release.t : hit.t + (hit.holdMs || 400);
-          const x2 = judgeX + ((endT - tNow) / approach) * (w - judgeX - 28);
-          const left = Math.min(x, x2);
-          const right = Math.max(x, x2);
-          ctx.strokeStyle = accent;
-          ctx.lineWidth = Math.max(12, 10 * sc);
-          ctx.lineCap = 'round';
-          ctx.globalAlpha = 0.55;
-          ctx.beginPath();
-          ctx.moveTo(left, y);
-          ctx.lineTo(right, y);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = accent;
-          ctx.beginPath();
-          ctx.arc(x, y, Math.max(10, 8 * sc), 0, Math.PI * 2);
-          ctx.fill();
-          continue;
-        }
-
-        if (type === 'punch') {
-          const r = (hit.kind === 'double' ? 14 : 18) * sc;
-          ctx.beginPath();
-          ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fillStyle = accent;
-          ctx.shadowColor = accent;
-          ctx.shadowBlur = 14;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-          ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-          ctx.lineWidth = Math.max(2, 2 * sc * 0.6);
-          ctx.stroke();
-          if (hit.kind === 'double' && hit.hitIndex === 0) {
-            ctx.fillStyle = '#fb923c';
-            ctx.font = 'bold ' + Math.round(12 * sc) + 'px system-ui';
-            ctx.fillText('×2', x + r + 4, y - r);
-          }
-        } else if (type === 'sword') {
-          ctx.save();
-          ctx.translate(x, y);
-          if (hit.dir === 'up' || hit.dir === 'down') ctx.rotate(hit.dir === 'up' ? -1.2 : 1.2);
-          else if (hit.dir === 'left') ctx.rotate(3.0);
-          else ctx.rotate(-0.5);
-          const len = 52 * sc;
-          const thick = Math.max(5, 6 * sc * 0.7);
-          ctx.fillStyle = accent;
-          ctx.shadowColor = accent;
-          ctx.shadowBlur = 12;
-          ctx.fillRect(-thick / 2, -len / 2, thick, len);
-          ctx.shadowBlur = 0;
-          ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.fillRect(-1.5, -len / 2, 3, len);
-          ctx.restore();
-          if (hit.dir) {
-            ctx.fillStyle = '#e8ecf4';
-            ctx.font = 'bold ' + Math.round(18 * sc) + 'px system-ui';
-            ctx.textAlign = 'center';
-            ctx.fillText(DIR_ARROW[hit.dir] || '', x, y - 32 * sc);
-            ctx.textAlign = 'start';
-          }
-        } else {
-          // projectile
-          ctx.save();
-          ctx.translate(x, y);
-          ctx.rotate(Math.PI / 4);
-          const s = (hit.kind === 'burst' ? 11 : 14) * sc;
-          ctx.fillStyle = accent;
-          ctx.shadowColor = accent;
-          ctx.shadowBlur = 14;
-          ctx.fillRect(-s, -s, s * 2, s * 2);
-          ctx.shadowBlur = 0;
-          ctx.restore();
-          if ((hit.kind === 'combo' || hit.kind === 'burst') && hit.hitIndex === 0) {
-            ctx.fillStyle = hit.kind === 'burst' ? '#f472b6' : '#fb923c';
-            ctx.font = 'bold ' + Math.round(12 * sc) + 'px system-ui';
-            ctx.fillText(
-              (hit.kind === 'burst' ? 'BURST×' : '×') + (hit.comboCount || ''),
-              x + 16 * sc,
-              y - 16 * sc
-            );
-          }
-        }
-      }
-
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.life -= 1;
-        p.x += p.vx;
-        p.y += p.vy;
-        if (p.life <= 0) {
-          particles.splice(i, 1);
-          continue;
-        }
-        ctx.globalAlpha = p.life / 14;
-        ctx.fillStyle = p.color;
-        const ps = Math.max(3, 3 * sc * 0.5);
-        ctx.fillRect(p.x, p.y, ps, ps);
-        ctx.globalAlpha = 1;
-      }
-
-      if (!playing) {
-        ctx.fillStyle = '#8b95a8';
-        ctx.font = Math.round(14 * Math.min(sc, 1.4)) + 'px system-ui';
-        ctx.textAlign = 'center';
-        ctx.fillText(withChrome ? '按 Start 開始' : '…', w / 2, h - Math.max(28, padY));
-        ctx.textAlign = 'start';
-      }
+    function applyJudge(out) {
+      if (!out || !out.hit) return;
+      showFlash(out.judgment);
+      const color =
+        out.judgment === 'perfect'
+          ? '#5eead4'
+          : out.judgment === 'good'
+            ? '#fbbf24'
+            : '#f87171';
+      const { w, h } = stageSize();
+      const px = toPx(out.hit.x || 0.5, out.hit.y || 0.5, w, h);
+      spawnBurst(color, px.x, px.y);
+      updateHud();
+      if (typeof options.onJudge === 'function') options.onJudge(out);
+      finishIfDone();
     }
 
     function finishIfDone() {
@@ -410,6 +267,8 @@
       playing = false;
       cancelAnimationFrame(raf);
       raf = 0;
+      activeSlider = null;
+      activeSpinner = null;
       const result = tracker.result();
       updateHud();
       if (typeof options.onComplete === 'function') {
@@ -426,21 +285,224 @@
       if (startBtn) startBtn.disabled = false;
     }
 
-    function applyJudge(out) {
-      if (!out.hit) return;
-      showFlash(out.judgment);
-      const color =
-        out.judgment === 'perfect'
-          ? '#5eead4'
-          : out.judgment === 'good'
-            ? '#fbbf24'
-            : '#f87171';
-      const w = canvas.clientWidth || 520;
-      const h = canvas.clientHeight || Math.max(240, window.innerHeight || 540);
-      spawnBurst(color, Math.floor(w * 0.22), laneY(h, out.hit.lane));
-      updateHud();
-      if (typeof options.onJudge === 'function') options.onJudge(out);
-      finishIfDone();
+    function drawCircle(hit, tNow, w, h, accent, r) {
+      const approach = hit.approachMs || Engine.CIRCLE_APPROACH_MS;
+      const appear = hit.t - approach;
+      if (tNow < appear - 50) return;
+      const px = toPx(hit.x, hit.y, w, h);
+      // Ring scale: 2.6 → 1.0 as t approaches hit.t
+      let ringScale = 2.6;
+      if (tNow >= appear) {
+        const p = Math.min(1, Math.max(0, (tNow - appear) / approach));
+        ringScale = 2.6 - p * 1.6; // 2.6 → 1.0
+      }
+      const ringR = r * ringScale;
+
+      // Approach ring
+      ctx.beginPath();
+      ctx.arc(px.x, px.y, ringR, 0, Math.PI * 2);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = Math.max(3, r * 0.12);
+      ctx.globalAlpha = 0.85;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Marker disc
+      ctx.beginPath();
+      ctx.arc(px.x, px.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = accent;
+      ctx.shadowColor = accent;
+      ctx.shadowBlur = 18;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Number
+      ctx.fillStyle = '#0a0d14';
+      ctx.font = 'bold ' + Math.round(r * 0.95) + 'px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(hit.number || ''), px.x, px.y + 1);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function drawSlider(hit, tNow, w, h, accent, r) {
+      const appear = hit.t - 500;
+      if (tNow < appear) return;
+      const pts = hit.points || [];
+      if (pts.length < 2) return;
+
+      // Path
+      ctx.beginPath();
+      const p0 = toPx(pts[0].x, pts[0].y, w, h);
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < pts.length; i++) {
+        const p = toPx(pts[i].x, pts[i].y, w, h);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = Math.max(10, r * 0.55);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      // Progress fill
+      if (hit.sliderStarted && hit.sliderProgress > 0) {
+        const total = Engine.pathLength(pts);
+        let remain = total * hit.sliderProgress;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < pts.length; i++) {
+          const a = pts[i - 1];
+          const b = pts[i];
+          const seg = Engine.dist(a, b);
+          if (remain <= 0) break;
+          if (remain >= seg) {
+            const p = toPx(b.x, b.y, w, h);
+            ctx.lineTo(p.x, p.y);
+            remain -= seg;
+          } else {
+            const t = remain / seg;
+            const p = toPx(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, w, h);
+            ctx.lineTo(p.x, p.y);
+            remain = 0;
+          }
+        }
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = Math.max(12, r * 0.65);
+        ctx.stroke();
+      }
+
+      // Start / end markers
+      const start = toPx(pts[0].x, pts[0].y, w, h);
+      const end = toPx(pts[pts.length - 1].x, pts[pts.length - 1].y, w, h);
+
+      // Approach pulse on start near t
+      const dt = hit.t - tNow;
+      let pulse = 1;
+      if (dt > 0 && dt < 500) pulse = 1 + (dt / 500) * 0.6;
+
+      ctx.beginPath();
+      ctx.arc(start.x, start.y, r * 0.85 * pulse, 0, Math.PI * 2);
+      ctx.fillStyle = accent;
+      ctx.shadowColor = accent;
+      ctx.shadowBlur = 14;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#0a0d14';
+      ctx.font = 'bold ' + Math.round(r * 0.75) + 'px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(hit.number || ''), start.x, start.y + 1);
+
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, r * 0.45, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fill();
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function drawSpinner(hit, tNow, w, h, accent, r) {
+      if (tNow < hit.t - 400) return;
+      const px = toPx(hit.x, hit.y, w, h);
+      const rad = Math.max(r * 2.2, Math.min(w, h) * 0.12);
+      const fill = Math.min(1, hit.spinnerFill / hit.fillRequired);
+
+      // Outer ring
+      ctx.beginPath();
+      ctx.arc(px.x, px.y, rad, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = Math.max(8, rad * 0.12);
+      ctx.stroke();
+
+      // Fill arc
+      if (fill > 0) {
+        ctx.beginPath();
+        ctx.arc(px.x, px.y, rad, -Math.PI / 2, -Math.PI / 2 + fill * Math.PI * 2);
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = Math.max(10, rad * 0.14);
+        ctx.lineCap = 'round';
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // Center disc
+      ctx.beginPath();
+      ctx.arc(px.x, px.y, rad * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = accent;
+      ctx.globalAlpha = hit.spinnerHeld ? 1 : 0.75;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = '#0a0d14';
+      ctx.font = 'bold ' + Math.round(rad * 0.28) + 'px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(hit.number || ''), px.x, px.y + 1);
+
+      // Hint arrows when active
+      if (hit.spinnerHeld || (tNow >= hit.t - 100 && tNow <= hit.endT)) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(px.x, px.y, rad * 0.7, -0.8, 0.8);
+        ctx.stroke();
+      }
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    function draw() {
+      const { w, h } = stageSize();
+      ctx.clearRect(0, 0, w, h);
+
+      const grd = ctx.createRadialGradient(w * 0.5, h * 0.45, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
+      grd.addColorStop(0, '#121826');
+      grd.addColorStop(1, '#07090e');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, w, h);
+
+      const accent = TYPE_COLOR[type] || '#e8c56a';
+      const tNow = playing ? nowMs() : 0;
+      const r = noteRadius(w, h);
+
+      // Draw unresolved + active notes (no highway / judge-line)
+      for (const hit of tracker.hits) {
+        if (hit.resolved) continue;
+        if (hit.kind === 'circle') drawCircle(hit, tNow, w, h, accent, r);
+        else if (hit.kind === 'slider') drawSlider(hit, tNow, w, h, accent, r);
+        else if (hit.kind === 'spinner') drawSpinner(hit, tNow, w, h, accent, r);
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life -= 1;
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+        ctx.globalAlpha = p.life / 16;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 4, 4);
+        ctx.globalAlpha = 1;
+      }
+
+      if (!playing) {
+        ctx.fillStyle = '#8b95a8';
+        ctx.font = '14px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(withChrome ? '按 Start 開始' : '…', w / 2, h - 36);
+        ctx.textAlign = 'start';
+      }
     }
 
     function loop() {
@@ -448,10 +510,15 @@
       const t = nowMs();
       const missed = tracker.tick(t);
       for (let i = 0; i < missed.length; i++) {
-        showFlash('miss');
+        const h = missed[i];
+        // Only flash miss if actually missed (not successful spinner end)
+        if (h.judgment === 'miss') showFlash('miss');
+        else if (h.judgment) showFlash(h.judgment);
         if (typeof options.onJudge === 'function') {
-          options.onJudge({ judgment: 'miss', hit: missed[i], deltaMs: null });
+          options.onJudge({ judgment: h.judgment || 'miss', hit: h, deltaMs: null });
         }
+        if (activeSlider && activeSlider.id === h.id) activeSlider = null;
+        if (activeSpinner && activeSpinner.id === h.id) activeSpinner = null;
       }
       if (missed.length) updateHud();
       draw();
@@ -459,90 +526,203 @@
       if (playing) raf = requestAnimationFrame(loop);
     }
 
-    function tapInput(meta) {
-      if (!playing) return;
-      const out = tracker.input(nowMs(), meta || {});
-      applyJudge(out);
+    function hitTestCircle(norm) {
+      const { w, h } = stageSize();
+      const r = noteRadius(w, h);
+      const rNorm = r / Math.min(w, h);
+      // Prefer current target if near it; else any visible circle under finger
+      const cur = tracker.currentCircle();
+      const candidates = tracker.hits.filter(function (hit) {
+        return !hit.resolved && hit.kind === 'circle';
+      });
+      let best = null;
+      let bestD = Infinity;
+      for (const hit of candidates) {
+        const d = Engine.dist(norm, { x: hit.x, y: hit.y });
+        const appear = hit.t - (hit.approachMs || Engine.CIRCLE_APPROACH_MS);
+        if (nowMs() < appear - 80) continue;
+        // Hit area includes approach ring loosely
+        if (d < rNorm * 2.8 && d < bestD) {
+          bestD = d;
+          best = hit;
+        }
+      }
+      // Space / ambiguous: use current numbered
+      if (!best && cur) return cur;
+      return best;
     }
 
-    function dirFromKeys(e) {
-      if (e.code === 'ArrowUp' || e.key === 'ArrowUp') return 'up';
-      if (e.code === 'ArrowDown' || e.key === 'ArrowDown') return 'down';
-      if (e.code === 'ArrowLeft' || e.key === 'ArrowLeft') return 'left';
-      if (e.code === 'ArrowRight' || e.key === 'ArrowRight') return 'right';
-      return null;
+    function hitTestSliderStart(norm) {
+      const hit = tracker.currentOpen('slider');
+      if (!hit || !hit.points || !hit.points[0]) return null;
+      if (Engine.dist(norm, hit.points[0]) < 0.12) return hit;
+      // Also allow any upcoming slider start nearby
+      for (const h of tracker.hits) {
+        if (h.resolved || h.kind !== 'slider' || !h.points) continue;
+        if (Engine.dist(norm, h.points[0]) < 0.1) return h;
+      }
+      return hit && Engine.dist(norm, hit.points[0]) < 0.18 ? hit : null;
     }
 
-    function laneFromKey(e) {
-      if (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z') return 0;
-      if (e.code === 'KeyX' || e.key === 'x' || e.key === 'X') return 2;
-      return null;
+    function hitTestSpinner(norm) {
+      for (const h of tracker.hits) {
+        if (h.resolved || h.kind !== 'spinner') continue;
+        if (Engine.dist(norm, { x: h.x, y: h.y }) < 0.18) return h;
+      }
+      return tracker.currentOpen('spinner');
+    }
+
+    function angleAt(norm, cx, cy) {
+      return Math.atan2(norm.y - cy, norm.x - cx);
     }
 
     function onKeyDown(e) {
       if (!playing) return;
-      const dir = dirFromKeys(e);
-      if (dir) {
+      if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
-        tapInput({ dir: dir, phase: 'press' });
-        return;
-      }
-      const lane = laneFromKey(e);
-      if (e.code === 'Space' || e.key === ' ' || lane != null) {
-        e.preventDefault();
-        holdPressArmed = true;
-        tapInput({
-          lane: lane != null ? lane : undefined,
-          phase: 'press',
-        });
+        if (type === 'punch') {
+          const out = tracker.input(nowMs(), { kind: 'circle' });
+          applyJudge(out);
+        } else if (type === 'projectile') {
+          // Space starts/holds current spinner (no spin without pointer — small nudge)
+          if (!activeSpinner) {
+            const hit = tracker.beginSpinner(nowMs());
+            if (hit) {
+              activeSpinner = hit;
+              // Space alone adds a modest fill tick so keyboard can still clear demos
+              tracker.spinSpinner(hit, Engine.SPINNER_FILL_REQUIRED * 0.08);
+            }
+          } else {
+            tracker.spinSpinner(activeSpinner, Engine.SPINNER_FILL_REQUIRED * 0.08);
+            if (activeSpinner.spinnerFill >= activeSpinner.fillRequired) {
+              const out = tracker.endSpinner(activeSpinner);
+              activeSpinner = null;
+              applyJudge(out);
+            }
+          }
+        }
       }
     }
 
     function onKeyUp(e) {
       if (!playing) return;
-      if (e.code === 'Space' || e.key === ' ') {
-        if (holdPressArmed) {
-          tapInput({ phase: 'release' });
-          holdPressArmed = false;
-        }
+      if ((e.code === 'Space' || e.key === ' ') && type === 'projectile' && activeSpinner) {
+        const out = tracker.endSpinner(activeSpinner);
+        activeSpinner = null;
+        applyJudge(out);
       }
     }
 
     function onPointerDown(e) {
       if (!playing) return;
-      pointerDownAt = { x: e.clientX, y: e.clientY, t: performance.now() };
-      const rect = canvas.getBoundingClientRect();
-      const relY = e.clientY - rect.top;
-      const h = rect.height || Math.max(240, window.innerHeight || 540);
-      let lane;
-      if (relY < h * 0.33) lane = 0;
-      else if (relY > h * 0.66) lane = 2;
-      else lane = 1;
-      holdPressArmed = true;
-      tapInput({ lane: lane, phase: 'press' });
+      e.preventDefault();
+      pointerId = e.pointerId;
+      try {
+        canvas.setPointerCapture(pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+      const norm = toNorm(e.clientX, e.clientY);
+      const t = nowMs();
+
+      if (type === 'punch') {
+        const hit = hitTestCircle(norm);
+        if (hit) {
+          const out = tracker.input(t, { kind: 'circle', targetId: hit.id });
+          applyJudge(out);
+        } else {
+          // Tap empty — try current target (lenient Space-equivalent)
+          const out = tracker.input(t, { kind: 'circle' });
+          if (out.hit) applyJudge(out);
+        }
+        return;
+      }
+
+      if (type === 'sword') {
+        const hit = hitTestSliderStart(norm) || tracker.currentOpen('slider');
+        if (hit) {
+          const started = tracker.beginSlider(t, hit.id);
+          if (started) {
+            activeSlider = started;
+            tracker.moveSlider(started, norm);
+          }
+        }
+        return;
+      }
+
+      if (type === 'projectile') {
+        const hit = hitTestSpinner(norm);
+        if (hit) {
+          const started = tracker.beginSpinner(t, hit.id);
+          if (started) {
+            activeSpinner = started;
+            lastPointerAngle = angleAt(norm, hit.x, hit.y);
+          }
+        }
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!playing) return;
+      if (pointerId != null && e.pointerId !== pointerId) return;
+      const norm = toNorm(e.clientX, e.clientY);
+
+      if (type === 'sword' && activeSlider && !activeSlider.resolved) {
+        tracker.moveSlider(activeSlider, norm);
+        // Auto-complete when path done near end time
+        if (activeSlider.sliderProgress >= 0.95) {
+          const out = tracker.endSlider(nowMs(), activeSlider);
+          activeSlider = null;
+          applyJudge(out);
+        }
+        return;
+      }
+
+      if (type === 'projectile' && activeSpinner && !activeSpinner.resolved) {
+        const ang = angleAt(norm, activeSpinner.x, activeSpinner.y);
+        if (lastPointerAngle != null) {
+          let d = ang - lastPointerAngle;
+          // Wrap to [-π, π]
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          tracker.spinSpinner(activeSpinner, d);
+          if (activeSpinner.spinnerFill >= activeSpinner.fillRequired) {
+            const out = tracker.endSpinner(activeSpinner);
+            activeSpinner = null;
+            lastPointerAngle = null;
+            applyJudge(out);
+            return;
+          }
+        }
+        lastPointerAngle = ang;
+      }
     }
 
     function onPointerUp(e) {
       if (!playing) return;
-      if (pointerDownAt) {
-        const dx = e.clientX - pointerDownAt.x;
-        const dy = e.clientY - pointerDownAt.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > 28 && type === 'sword') {
-          let dir;
-          if (Math.abs(dx) > Math.abs(dy)) dir = dx > 0 ? 'right' : 'left';
-          else dir = dy > 0 ? 'down' : 'up';
-          tapInput({ dir: dir, phase: 'press' });
-          pointerDownAt = null;
-          holdPressArmed = false;
-          return;
-        }
+      if (pointerId != null && e.pointerId !== pointerId) return;
+
+      if (type === 'sword' && activeSlider && !activeSlider.resolved) {
+        const norm = toNorm(e.clientX, e.clientY);
+        tracker.moveSlider(activeSlider, norm);
+        const out = tracker.endSlider(nowMs(), activeSlider);
+        activeSlider = null;
+        applyJudge(out);
       }
-      if (holdPressArmed) {
-        tapInput({ phase: 'release' });
-        holdPressArmed = false;
+
+      if (type === 'projectile' && activeSpinner && !activeSpinner.resolved) {
+        const out = tracker.endSpinner(activeSpinner);
+        activeSpinner = null;
+        lastPointerAngle = null;
+        applyJudge(out);
       }
-      pointerDownAt = null;
+
+      pointerId = null;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
     }
 
     function beginPlay() {
@@ -553,7 +733,9 @@
       particles.length = 0;
       playing = true;
       startPerf = performance.now();
-      holdPressArmed = false;
+      activeSlider = null;
+      activeSpinner = null;
+      lastPointerAngle = null;
       updateHud();
       typeEl.textContent = TYPE_LABEL[type] || type;
       typeEl.dataset.type = type;
@@ -570,10 +752,14 @@
       cancelAnimationFrame(raf);
       raf = 0;
       clearTimeout(flashTimer);
+      activeSlider = null;
+      activeSpinner = null;
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      canvas.parentElement.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
       window.removeEventListener('resize', onResize);
       const stopBtn = root.querySelector('[data-act="stop"]');
       const startBtn = root.querySelector('[data-act="start"]');
@@ -589,7 +775,6 @@
         windows
       );
       updateHud();
-      // rebind after stop unbound
       bind();
       draw();
     }
@@ -612,8 +797,10 @@
     function bind() {
       window.addEventListener('keydown', onKeyDown);
       window.addEventListener('keyup', onKeyUp);
-      canvas.parentElement.addEventListener('pointerdown', onPointerDown);
+      canvas.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
       window.addEventListener('resize', onResize);
     }
 
@@ -661,10 +848,6 @@
     });
   }
 
-  /**
-   * Bout / RhythmCharts compatibility.
-   * play(type, mountEl, onComplete) OR play(type, onComplete)
-   */
   function play(type, mountOrCb, maybeCb) {
     let mount = document.getElementById('chart-mount');
     let onComplete = function () {};
@@ -691,7 +874,6 @@
           judgment: cap,
           score: Math.round((r.accuracy || 0) * 100),
           accuracy: r.accuracy,
-          // lowercase also present for CEO consumers reading play results
           judgmentRaw: r.judgment,
           tallies: r.tallies,
           comboMax: r.comboMax,

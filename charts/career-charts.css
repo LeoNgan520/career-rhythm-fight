@@ -1,6 +1,5 @@
-/* Career-ChartUI — fullscreen 應援團-style playfield (generic martial; not SNK IP)
-   Root fills its container 100%×100%. Bout mounts a fullscreen overlay;
-   demo.html uses a viewport-sized #mount. No compact card / 540px / 180px stage. */
+/* Career-ChartUI — fullscreen 應援團 objects (circles / sliders / spinners)
+   Root fills container 100%×100%. No highway / judge-line playfield. */
 
 .career-charts-root {
   --cc-bg: #07090e;
@@ -25,7 +24,7 @@
   display: flex;
   flex-direction: column;
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(232, 197, 106, 0.06), transparent 50%),
+    radial-gradient(120% 80% at 50% -10%, rgba(232, 197, 106, 0.05), transparent 50%),
     var(--cc-bg);
   border: none;
   border-radius: 0;
@@ -35,6 +34,7 @@
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   box-shadow: none;
+  touch-action: none;
 }
 
 .career-charts-root *,
@@ -43,7 +43,6 @@
   box-sizing: border-box;
 }
 
-/* Demo chrome (tabs / Start) — thin top bar; playfield still dominates */
 .cc-tabs {
   display: flex;
   gap: 6px;
@@ -92,7 +91,7 @@
   box-shadow: 0 0 16px rgba(192, 132, 252, 0.15);
 }
 
-/* Minimal corner HUD — does not eat the playfield */
+/* Minimal corner HUD */
 .cc-hud {
   position: absolute;
   top: 0;
@@ -172,7 +171,6 @@
 .cc-pill.g b { color: var(--cc-good); }
 .cc-pill.m b { color: var(--cc-miss); }
 
-/* Playfield = entire remaining viewport */
 .cc-stage-wrap {
   position: relative;
   flex: 1 1 auto;
@@ -181,6 +179,7 @@
   height: 100%;
   cursor: pointer;
   background: #0a0d14;
+  touch-action: none;
 }
 
 .cc-vignette {
@@ -188,8 +187,7 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(70% 90% at 18% 50%, rgba(232, 197, 106, 0.07), transparent 48%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.4), transparent 28%, transparent 72%, rgba(0, 0, 0, 0.3));
+    radial-gradient(55% 55% at 50% 48%, transparent 40%, rgba(0, 0, 0, 0.45) 100%);
   z-index: 1;
 }
 
@@ -199,12 +197,14 @@
   height: 100%;
   position: relative;
   z-index: 0;
+  touch-action: none;
 }
 
+/* Flash centered on playfield (not highway judge-x) */
 .cc-flash {
   position: absolute;
-  left: 22%;
-  top: 50%;
+  left: 50%;
+  top: 42%;
   transform: translate(-50%, -50%) scale(0.9);
   pointer-events: none;
   z-index: 2;
@@ -225,7 +225,6 @@
 .cc-flash.good { color: var(--cc-good); }
 .cc-flash.miss { color: var(--cc-miss); }
 
-/* Tiny corner hint — not a sheet-music footer card */
 .cc-hint {
   position: absolute;
   bottom: 10px;
@@ -287,12 +286,8 @@
   cursor: not-allowed;
 }
 
-/* When demo chrome is present, nudge HUD below tabs */
 .career-charts-root:has(.cc-tabs) .cc-hud {
   top: 44px;
-}
-.career-charts-root:has(.cc-tabs) .cc-stage-wrap {
-  /* flex already fills; tabs + actions take their share */
 }
 .career-charts-root:has(.cc-actions) .cc-hint {
   bottom: 56px;

@@ -1,16 +1,16 @@
 /**
  * Career-ChartUI — pure timing / judgment engine (no DOM).
- * Types: punch (拳圓點) | sword (劍線型) | projectile (暗器線型+連擊)
  *
- * Note: {
- *   t: number,              // ms from start
- *   lane?: 0|1|2,           // multi-lane (0 top … 2 bottom); default 1
- *   kind?: 'tap'|'hold'|'combo'|'double'|'burst'|'swipe',
- *   comboCount?: number,    // 2–4 combo / 4–6 burst
- *   holdMs?: number,        // hold length (default 400)
- *   dir?: 'up'|'down'|'left'|'right',  // swipe required direction
- *   id?: string
- * }
+ * Type mapping (CEO 2026-10-28):
+ *   punch      → approach circles 縮圈 (enemy POINT / fist)
+ *   sword      → fast sliders       (enemy LINE / slash)
+ *   projectile → spinner 轉盤       (guard / block)
+ *
+ * Note shapes:
+ *   circle  { kind:'circle', t, x, y, number?, approachMs?, id? }
+ *   slider  { kind:'slider', t, durationMs?, points:[{x,y}…], number?, id? }
+ *   spinner { kind:'spinner', t, durationMs?, fillRequired?, x?, y?, id? }
+ * Coordinates x/y are normalized 0..1 of the playfield.
  */
 
 export const DEFAULT_WINDOWS = Object.freeze({
@@ -18,21 +18,40 @@ export const DEFAULT_WINDOWS = Object.freeze({
   goodMs: 100,
 });
 
-/** Scroll approach lead time (ms). */
-export const APPROACH_MS = 1200;
+/** Circle: time from appear → ring meets edge (ideal hit). */
+export const CIRCLE_APPROACH_MS = 800;
+
+/** Slider: default travel duration — snappy whip-slash, not leisurely. */
+export const SLIDER_DEFAULT_DURATION_MS = 220;
+
+/** Slider: max path length in normalized units for demo helpers. */
+export const SLIDER_MAX_PATH_LEN = 0.28;
+
+/** Spinner: radians of spin needed for full fill (≈1.5 turns). */
+export const SPINNER_FILL_REQUIRED = Math.PI * 3;
+
+/** Spinner: fill ratio thresholds. */
+export const SPINNER_PERFECT_FILL = 1.0;
+export const SPINNER_GOOD_FILL = 0.55;
+
+/** @deprecated highway approach — kept as alias so old imports don't crash. Prefer CIRCLE_APPROACH_MS. */
+export const APPROACH_MS = CIRCLE_APPROACH_MS;
 
 /** @typedef {'perfect'|'good'|'miss'} Judgment */
 /** @typedef {'punch'|'sword'|'projectile'} ChartType */
-/** @typedef {'tap'|'hold'|'combo'|'double'|'burst'|'swipe'} NoteKind */
-/** @typedef {'up'|'down'|'left'|'right'} SwipeDir */
+/** @typedef {'circle'|'slider'|'spinner'} NoteKind */
 /**
+ * @typedef {{ x: number, y: number }} NormPoint
  * @typedef {{
- *   t: number,
- *   lane?: number,
  *   kind?: NoteKind,
- *   comboCount?: number,
- *   holdMs?: number,
- *   dir?: SwipeDir,
+ *   t: number,
+ *   x?: number,
+ *   y?: number,
+ *   number?: number,
+ *   approachMs?: number,
+ *   durationMs?: number,
+ *   points?: NormPoint[],
+ *   fillRequired?: number,
  *   id?: string
  * }} ChartNote
  */
@@ -79,198 +98,375 @@ export function accuracyFromTallies(tallies) {
   return (p * 1 + g * 0.6) / total;
 }
 
-function clampLane(lane) {
-  const n = lane == null ? 1 : Number(lane);
-  if (!Number.isFinite(n)) return 1;
-  return Math.max(0, Math.min(2, Math.round(n)));
+/** Combine several sub-judgments into one note judgment. */
+export function combineJudgments(list) {
+  if (!list || !list.length) return 'miss';
+  let score = 0;
+  for (const j of list) score += judgmentScore(j);
+  const avg = score / list.length;
+  if (avg >= 0.85) return 'perfect';
+  if (avg >= 0.399) return 'good';
+  return 'miss';
+}
+
+export function clamp01(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+export function dist(a, b) {
+  const dx = (a.x || 0) - (b.x || 0);
+  const dy = (a.y || 0) - (b.y || 0);
+  return Math.hypot(dx, dy);
+}
+
+/** Polyline length in normalized units. */
+export function pathLength(points) {
+  if (!points || points.length < 2) return 0;
+  let len = 0;
+  for (let i = 1; i < points.length; i++) len += dist(points[i - 1], points[i]);
+  return len;
 }
 
 /**
- * Expand one logical note into chronological hit targets.
- * @param {ChartNote} note
- * @param {{ comboGapMs?: number, doubleGapMs?: number, burstGapMs?: number }} [opts]
+ * Snappy slider duration from path length.
+ * Short whip: ~160–280ms. Longer paths still capped.
  */
-export function expandNoteHits(note, opts) {
-  const o = {
-    comboGapMs: 70,
-    doubleGapMs: 55,
-    burstGapMs: 48,
-    ...(opts || {}),
-  };
-  const parentId = note.id || `n${note.t}`;
-  const kind = note.kind || 'tap';
-  const lane = clampLane(note.lane);
-  const base = { lane, dir: note.dir, parentId, kind };
+export function sliderDurationMs(points, overrideMs) {
+  if (overrideMs != null && Number.isFinite(overrideMs) && overrideMs > 0) {
+    return Math.max(120, Math.min(400, overrideMs));
+  }
+  const len = pathLength(points);
+  // ~0.001 normalized unit / ms at baseline → short paths finish fast
+  const raw = 140 + len * 450;
+  return Math.max(160, Math.min(280, Math.round(raw)));
+}
 
-  if (kind === 'hold') {
-    const holdMs = Math.max(200, note.holdMs || 400);
+/**
+ * Progress 0..1 of cursor along polyline (nearest-point projection chain).
+ * Returns how far along the path the sample has reached (monotonic best).
+ */
+export function pathProgress(points, sample, prevProgress) {
+  if (!points || points.length < 2) return prevProgress || 0;
+  const total = pathLength(points);
+  if (total <= 1e-9) return 1;
+  // Find closest segment + cumulative distance
+  let bestD = Infinity;
+  let bestAlong = 0;
+  let cum = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const segLen = dist(a, b);
+    const ax = a.x || 0;
+    const ay = a.y || 0;
+    const bx = b.x || 0;
+    const by = b.y || 0;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const t =
+      segLen < 1e-9
+        ? 0
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              ((sample.x - ax) * abx + (sample.y - ay) * aby) / (segLen * segLen)
+            )
+          );
+    const px = ax + abx * t;
+    const py = ay + aby * t;
+    const d = Math.hypot(sample.x - px, sample.y - py);
+    if (d < bestD) {
+      bestD = d;
+      bestAlong = cum + segLen * t;
+    }
+    cum += segLen;
+  }
+  // Snap radius: if too far from path, don't advance
+  const snap = 0.12;
+  let prog = bestAlong / total;
+  if (bestD > snap) prog = prevProgress || 0;
+  // Monotonic: never go backwards
+  return Math.max(prevProgress || 0, Math.min(1, prog));
+}
+
+/** Spinner fill judgment from fill ratio (0..1+). */
+export function judgeSpinnerFill(ratio) {
+  const r = Number(ratio);
+  if (!Number.isFinite(r) || r < SPINNER_GOOD_FILL) return 'miss';
+  if (r >= SPINNER_PERFECT_FILL) return 'perfect';
+  return 'good';
+}
+
+/**
+ * Normalize / expand one chart note into a runtime hit descriptor.
+ * Circles/sliders/spinners are 1:1 (no multi-hit expand).
+ * @param {ChartNote} note
+ */
+export function expandNoteHits(note) {
+  const kind = note.kind || inferKind(note);
+  const parentId = note.id || `n${note.t}`;
+  const number = note.number != null ? note.number : undefined;
+
+  if (kind === 'slider') {
+    const points = (note.points || []).map((p) => ({
+      x: clamp01(p.x),
+      y: clamp01(p.y),
+    }));
+    const durationMs = sliderDurationMs(points, note.durationMs);
     return [
       {
-        ...note,
-        ...base,
-        id: `${parentId}#press`,
-        hitIndex: 0,
+        kind: 'slider',
+        id: parentId,
+        parentId,
+        number,
         t: note.t,
-        phase: 'press',
-        holdMs,
-      },
-      {
-        ...note,
-        ...base,
-        id: `${parentId}#release`,
-        hitIndex: 1,
-        t: note.t + holdMs,
-        phase: 'release',
-        holdMs,
+        endT: note.t + durationMs,
+        durationMs,
+        points,
+        x: points[0] ? points[0].x : 0.5,
+        y: points[0] ? points[0].y : 0.5,
       },
     ];
   }
 
-  if (kind === 'double') {
-    return [0, 1].map((i) => ({
-      ...note,
-      ...base,
-      id: `${parentId}#${i}`,
-      hitIndex: i,
-      t: note.t + i * o.doubleGapMs,
-      kind: 'double',
-      comboCount: 2,
-    }));
+  if (kind === 'spinner') {
+    const durationMs = Math.max(400, note.durationMs || 900);
+    const fillRequired = note.fillRequired || SPINNER_FILL_REQUIRED;
+    return [
+      {
+        kind: 'spinner',
+        id: parentId,
+        parentId,
+        number,
+        t: note.t,
+        endT: note.t + durationMs,
+        durationMs,
+        fillRequired,
+        x: clamp01(note.x == null ? 0.5 : note.x),
+        y: clamp01(note.y == null ? 0.5 : note.y),
+      },
+    ];
   }
 
-  if (kind === 'burst') {
-    const count = Math.max(4, Math.min(6, note.comboCount || 5));
-    const hits = [];
-    for (let i = 0; i < count; i++) {
-      hits.push({
-        ...note,
-        ...base,
-        id: `${parentId}#${i}`,
-        hitIndex: i,
-        t: note.t + i * o.burstGapMs,
-        kind: 'burst',
-        comboCount: count,
-      });
-    }
-    return hits;
-  }
-
-  if (kind === 'combo') {
-    const count = Math.max(2, Math.min(4, note.comboCount || 3));
-    const hits = [];
-    for (let i = 0; i < count; i++) {
-      hits.push({
-        ...note,
-        ...base,
-        id: `${parentId}#${i}`,
-        hitIndex: i,
-        t: note.t + i * o.comboGapMs,
-        kind: 'combo',
-        comboCount: count,
-      });
-    }
-    return hits;
-  }
-
-  // tap | swipe
+  // circle (default)
+  const approachMs = Math.max(400, note.approachMs || CIRCLE_APPROACH_MS);
   return [
     {
-      ...note,
-      ...base,
-      id: `${parentId}#0`,
-      hitIndex: 0,
+      kind: 'circle',
+      id: parentId,
+      parentId,
+      number,
       t: note.t,
-      phase: kind === 'swipe' ? 'swipe' : 'tap',
+      approachMs,
+      x: clamp01(note.x == null ? 0.5 : note.x),
+      y: clamp01(note.y == null ? 0.5 : note.y),
     },
   ];
 }
 
-export function scheduleHits(chart, opts) {
+function inferKind(note) {
+  if (note.points && note.points.length) return 'slider';
+  if (note.fillRequired != null || note.kind === 'spinner') return 'spinner';
+  return 'circle';
+}
+
+export function scheduleHits(chart) {
   const hits = [];
-  for (const n of chart || []) hits.push(...expandNoteHits(n, opts));
-  hits.sort((a, b) => a.t - b.t || (a.hitIndex || 0) - (b.hitIndex || 0));
+  for (const n of chart || []) hits.push(...expandNoteHits(n));
+  // Number sequence if missing
+  let auto = 1;
+  for (const h of hits) {
+    if (h.number == null) h.number = auto;
+    auto = h.number + 1;
+  }
+  hits.sort((a, b) => a.t - b.t || (a.number || 0) - (b.number || 0));
   return hits;
 }
 
+export function missDeadline(hit, windows) {
+  const w = { ...DEFAULT_WINDOWS, ...(windows || {}) };
+  if (hit.kind === 'slider' || hit.kind === 'spinner') {
+    return (hit.endT != null ? hit.endT : hit.t) + w.goodMs + 16;
+  }
+  return hit.t + w.goodMs + 16;
+}
+
 /**
- * Built-in demo charts — core feel + creative variants.
+ * Built-in demo charts — Ouendan objects, gameplay-first.
  * @param {ChartType} type
  * @returns {ChartNote[]}
  */
 export function demoChart(type) {
   if (type === 'punch') {
-    // 圓點 — multi-lane + double-tap + hold
+    // Approach circles — numbered sequence across the field
     return [
-      { t: 700, kind: 'tap', lane: 1, id: 'p0' },
-      { t: 1300, kind: 'tap', lane: 0, id: 'p1' },
-      { t: 1800, kind: 'tap', lane: 2, id: 'p2' },
-      { t: 2300, kind: 'double', lane: 1, id: 'p3' },
-      { t: 3000, kind: 'tap', lane: 0, id: 'p4' },
-      { t: 3500, kind: 'hold', lane: 1, holdMs: 420, id: 'p5' },
-      { t: 4400, kind: 'tap', lane: 2, id: 'p6' },
-      { t: 4900, kind: 'tap', lane: 1, id: 'p7' },
-      { t: 5400, kind: 'double', lane: 0, id: 'p8' },
-      { t: 6100, kind: 'tap', lane: 1, id: 'p9' },
+      { kind: 'circle', t: 900, x: 0.5, y: 0.45, number: 1, id: 'c1' },
+      { kind: 'circle', t: 1500, x: 0.28, y: 0.35, number: 2, id: 'c2' },
+      { kind: 'circle', t: 2100, x: 0.72, y: 0.55, number: 3, id: 'c3' },
+      { kind: 'circle', t: 2700, x: 0.4, y: 0.65, number: 4, id: 'c4' },
+      { kind: 'circle', t: 3300, x: 0.62, y: 0.3, number: 5, id: 'c5' },
+      { kind: 'circle', t: 3900, x: 0.35, y: 0.5, number: 6, id: 'c6' },
+      { kind: 'circle', t: 4500, x: 0.68, y: 0.6, number: 7, id: 'c7' },
+      { kind: 'circle', t: 5100, x: 0.5, y: 0.4, number: 8, id: 'c8' },
+      { kind: 'circle', t: 5700, x: 0.25, y: 0.55, number: 9, id: 'c9' },
+      { kind: 'circle', t: 6300, x: 0.75, y: 0.4, number: 10, id: 'c10' },
     ];
   }
   if (type === 'sword') {
-    // 線型 — swipe directions + holds + lanes
+    // Fast short sliders — whip-slash arcs / lines
     return [
-      { t: 800, kind: 'swipe', dir: 'right', lane: 1, id: 's0' },
-      { t: 1400, kind: 'swipe', dir: 'down', lane: 0, id: 's1' },
-      { t: 2000, kind: 'hold', lane: 1, holdMs: 380, id: 's2' },
-      { t: 2800, kind: 'swipe', dir: 'left', lane: 2, id: 's3' },
-      { t: 3400, kind: 'swipe', dir: 'up', lane: 1, id: 's4' },
-      { t: 4000, kind: 'tap', lane: 0, id: 's5' },
-      { t: 4500, kind: 'swipe', dir: 'right', lane: 1, id: 's6' },
-      { t: 5100, kind: 'hold', lane: 2, holdMs: 360, id: 's7' },
-      { t: 5900, kind: 'swipe', dir: 'down', lane: 1, id: 's8' },
+      {
+        kind: 'slider',
+        t: 800,
+        number: 1,
+        id: 's1',
+        durationMs: 200,
+        points: [
+          { x: 0.3, y: 0.4 },
+          { x: 0.5, y: 0.35 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 1400,
+        number: 2,
+        id: 's2',
+        durationMs: 180,
+        points: [
+          { x: 0.65, y: 0.3 },
+          { x: 0.7, y: 0.5 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 2000,
+        number: 3,
+        id: 's3',
+        durationMs: 220,
+        points: [
+          { x: 0.35, y: 0.55 },
+          { x: 0.55, y: 0.65 },
+          { x: 0.7, y: 0.55 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 2800,
+        number: 4,
+        id: 's4',
+        durationMs: 190,
+        points: [
+          { x: 0.25, y: 0.35 },
+          { x: 0.45, y: 0.45 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 3400,
+        number: 5,
+        id: 's5',
+        durationMs: 200,
+        points: [
+          { x: 0.6, y: 0.6 },
+          { x: 0.4, y: 0.5 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 4100,
+        number: 6,
+        id: 's6',
+        durationMs: 210,
+        points: [
+          { x: 0.5, y: 0.3 },
+          { x: 0.55, y: 0.5 },
+          { x: 0.45, y: 0.65 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 4900,
+        number: 7,
+        id: 's7',
+        durationMs: 180,
+        points: [
+          { x: 0.28, y: 0.5 },
+          { x: 0.48, y: 0.4 },
+        ],
+      },
+      {
+        kind: 'slider',
+        t: 5500,
+        number: 8,
+        id: 's8',
+        durationMs: 200,
+        points: [
+          { x: 0.7, y: 0.35 },
+          { x: 0.55, y: 0.55 },
+        ],
+      },
     ];
   }
-  // projectile 暗器 — combo + burst flurries + lanes
+  // projectile — guard spinners
   return [
-    { t: 650, kind: 'tap', lane: 1, id: 'd0' },
-    { t: 1200, kind: 'combo', comboCount: 3, lane: 0, id: 'd1' },
-    { t: 2000, kind: 'tap', lane: 2, id: 'd2' },
-    { t: 2500, kind: 'burst', comboCount: 5, lane: 1, id: 'd3' },
-    { t: 3400, kind: 'combo', comboCount: 2, lane: 2, id: 'd4' },
-    { t: 4000, kind: 'tap', lane: 0, id: 'd5' },
-    { t: 4500, kind: 'burst', comboCount: 4, lane: 1, id: 'd6' },
-    { t: 5300, kind: 'double', lane: 2, id: 'd7' },
-    { t: 5900, kind: 'combo', comboCount: 3, lane: 1, id: 'd8' },
-    { t: 6700, kind: 'tap', lane: 0, id: 'd9' },
+    {
+      kind: 'spinner',
+      t: 700,
+      durationMs: 1000,
+      x: 0.5,
+      y: 0.48,
+      number: 1,
+      id: 'sp1',
+    },
+    {
+      kind: 'spinner',
+      t: 2200,
+      durationMs: 900,
+      x: 0.35,
+      y: 0.4,
+      number: 2,
+      id: 'sp2',
+    },
+    {
+      kind: 'spinner',
+      t: 3600,
+      durationMs: 1100,
+      x: 0.65,
+      y: 0.55,
+      number: 3,
+      id: 'sp3',
+    },
+    {
+      kind: 'spinner',
+      t: 5200,
+      durationMs: 950,
+      x: 0.5,
+      y: 0.45,
+      number: 4,
+      id: 'sp4',
+    },
+    {
+      kind: 'spinner',
+      t: 6600,
+      durationMs: 1000,
+      x: 0.4,
+      y: 0.5,
+      number: 5,
+      id: 'sp5',
+    },
   ];
 }
 
-export function missDeadline(noteT, windows) {
-  const w = { ...DEFAULT_WINDOWS, ...(windows || {}) };
-  return noteT + w.goodMs + 16;
-}
-
 /**
- * @param {object} hit
- * @param {{ lane?: number, dir?: SwipeDir, phase?: string }} inputMeta
- * @returns {boolean}
- */
-export function inputMatchesHit(hit, inputMeta) {
-  const meta = inputMeta || {};
-  // lane: if player specifies lane, must match; unspecified = any (Space)
-  if (meta.lane != null && clampLane(meta.lane) !== clampLane(hit.lane)) {
-    return false;
-  }
-  // swipe direction required
-  if (hit.kind === 'swipe' || hit.dir) {
-    if (!meta.dir || meta.dir !== hit.dir) return false;
-  }
-  // hold phases
-  if (hit.phase === 'press' && meta.phase === 'release') return false;
-  if (hit.phase === 'release' && meta.phase === 'press') return false;
-  if (hit.phase === 'release' && meta.phase == null) return false;
-  return true;
-}
-
-/**
- * Runtime tracker (unit-testable without rAF).
+ * Runtime tracker — unit-testable without rAF.
+ *
+ * Circles: input({ kind:'circle', targetId? }) at nowMs
+ * Sliders: beginSlider / moveSlider / endSlider
+ * Spinners: beginSpinner / spinSpinner(deltaRad) / endSpinner
+ *
  * @param {ChartNote[]} chart
  * @param {JudgeWindows} [windows]
  */
@@ -279,6 +475,14 @@ export function createHitTracker(chart, windows) {
     ...h,
     resolved: false,
     judgment: /** @type {Judgment|null} */ (null),
+    // slider runtime
+    sliderStarted: false,
+    sliderProgress: 0,
+    sliderStartJudgment: /** @type {Judgment|null} */ (null),
+    // spinner runtime
+    spinnerHeld: false,
+    spinnerFill: 0,
+    spinnerAngle: null,
   }));
   const tallies = { perfect: 0, good: 0, miss: 0 };
   let combo = 0;
@@ -286,6 +490,7 @@ export function createHitTracker(chart, windows) {
   const w = { ...DEFAULT_WINDOWS, ...(windows || {}) };
 
   function resolve(hit, j) {
+    if (hit.resolved) return;
     hit.resolved = true;
     hit.judgment = j;
     tallies[j] += 1;
@@ -296,38 +501,191 @@ export function createHitTracker(chart, windows) {
     }
   }
 
+  /** Next unresolved circle (for Space / current-target tap). */
+  function currentCircle() {
+    for (const h of hits) {
+      if (!h.resolved && h.kind === 'circle') return h;
+    }
+    return null;
+  }
+
+  function currentOpen(kind) {
+    for (const h of hits) {
+      if (!h.resolved && h.kind === kind) return h;
+    }
+    return null;
+  }
+
   /**
+   * Generic input for circles (and perfect-play helpers).
    * @param {number} nowMs
-   * @param {{ lane?: number, dir?: SwipeDir, phase?: 'press'|'release' }} [meta]
+   * @param {{ kind?: string, targetId?: string, number?: number }} [meta]
    */
   function input(nowMs, meta) {
-    let best = null;
-    let bestAbs = Infinity;
-    for (const h of hits) {
-      if (h.resolved) continue;
-      if (!inputMatchesHit(h, meta)) continue;
-      const delta = nowMs - h.t;
-      const abs = Math.abs(delta);
-      if (abs > w.goodMs) continue;
-      if (abs < bestAbs) {
-        bestAbs = abs;
-        best = h;
-      }
+    const m = meta || {};
+    // Prefer explicit circle / default to circle tap
+    if (!m.kind || m.kind === 'circle' || m.kind === 'tap') {
+      return tapCircle(nowMs, m);
     }
-    if (!best) {
+    if (m.kind === 'slider') {
+      // Convenience: one-shot perfect path for tests
+      return autoCompleteSlider(nowMs, m);
+    }
+    if (m.kind === 'spinner') {
+      return autoCompleteSpinner(nowMs, m);
+    }
+    return { judgment: 'miss', hit: null, deltaMs: null };
+  }
+
+  function tapCircle(nowMs, meta) {
+    let target = null;
+    if (meta.targetId) {
+      target = hits.find((h) => !h.resolved && h.id === meta.targetId && h.kind === 'circle');
+    } else if (meta.number != null) {
+      target = hits.find(
+        (h) => !h.resolved && h.kind === 'circle' && h.number === meta.number
+      );
+    } else {
+      // Current numbered target only (Ouendan sequence)
+      target = currentCircle();
+    }
+    if (!target) {
       return { judgment: 'miss', hit: null, deltaMs: null };
     }
-    const deltaMs = nowMs - best.t;
+    const deltaMs = nowMs - target.t;
+    if (Math.abs(deltaMs) > w.goodMs) {
+      // Too early/late for this target — count as miss only if past window;
+      // early taps that miss the window don't resolve (player can retry)
+      if (deltaMs > w.goodMs) {
+        resolve(target, 'miss');
+        return { judgment: 'miss', hit: target, deltaMs };
+      }
+      return { judgment: 'miss', hit: null, deltaMs };
+    }
     const j = judge(deltaMs, w);
-    resolve(best, j);
-    return { judgment: j, hit: best, deltaMs };
+    resolve(target, j);
+    return { judgment: j, hit: target, deltaMs };
+  }
+
+  function beginSlider(nowMs, targetId) {
+    let hit = targetId
+      ? hits.find((h) => !h.resolved && h.id === targetId && h.kind === 'slider')
+      : currentOpen('slider');
+    if (!hit || hit.sliderStarted) return null;
+    const delta = nowMs - hit.t;
+    // Allow start slightly early within good window, or once past t until deadline
+    if (delta < -w.goodMs) return null;
+    if (nowMs > missDeadline(hit, w)) {
+      resolve(hit, 'miss');
+      return hit;
+    }
+    hit.sliderStarted = true;
+    hit.sliderStartJudgment = judge(delta, w);
+    hit.sliderProgress = 0;
+    return hit;
+  }
+
+  function moveSlider(hit, sampleNorm) {
+    if (!hit || hit.resolved || !hit.sliderStarted) return 0;
+    hit.sliderProgress = pathProgress(hit.points, sampleNorm, hit.sliderProgress);
+    return hit.sliderProgress;
+  }
+
+  function endSlider(nowMs, hit) {
+    if (!hit || hit.resolved) return { judgment: 'miss', hit: null };
+    if (!hit.sliderStarted) {
+      // Never started — treat as miss if past window
+      if (nowMs >= missDeadline(hit, w)) {
+        resolve(hit, 'miss');
+        return { judgment: 'miss', hit };
+      }
+      return { judgment: 'miss', hit: null };
+    }
+    const endDelta = nowMs - hit.endT;
+    const endJ = judge(endDelta, w);
+    const startJ = hit.sliderStartJudgment || 'miss';
+    // Path completion: perfect ≥0.92, good ≥0.65, else miss
+    let pathJ = 'miss';
+    if (hit.sliderProgress >= 0.92) pathJ = 'perfect';
+    else if (hit.sliderProgress >= 0.65) pathJ = 'good';
+    const j = combineJudgments([startJ, pathJ, endJ]);
+    resolve(hit, j);
+    return { judgment: j, hit, progress: hit.sliderProgress };
+  }
+
+  function autoCompleteSlider(nowMs, meta) {
+    const hit = meta.targetId
+      ? hits.find((h) => !h.resolved && h.id === meta.targetId)
+      : currentOpen('slider');
+    if (!hit) return { judgment: 'miss', hit: null, deltaMs: null };
+    beginSlider(hit.t, hit.id);
+    hit.sliderProgress = 1;
+    return endSlider(hit.endT, hit);
+  }
+
+  function beginSpinner(nowMs, targetId) {
+    let hit = targetId
+      ? hits.find((h) => !h.resolved && h.id === targetId && h.kind === 'spinner')
+      : currentOpen('spinner');
+    if (!hit) return null;
+    // Active window: from t - goodMs … endT
+    if (nowMs < hit.t - w.goodMs) return null;
+    if (nowMs > hit.endT + w.goodMs) {
+      resolve(hit, 'miss');
+      return hit;
+    }
+    hit.spinnerHeld = true;
+    return hit;
+  }
+
+  function spinSpinner(hit, deltaRad) {
+    if (!hit || hit.resolved || !hit.spinnerHeld) return 0;
+    const d = Math.abs(Number(deltaRad)) || 0;
+    hit.spinnerFill += d;
+    return hit.spinnerFill / hit.fillRequired;
+  }
+
+  function endSpinner(hit) {
+    if (!hit || hit.resolved) return { judgment: 'miss', hit: null };
+    hit.spinnerHeld = false;
+    const ratio = hit.spinnerFill / hit.fillRequired;
+    const j = judgeSpinnerFill(ratio);
+    resolve(hit, j);
+    return { judgment: j, hit, fill: ratio };
+  }
+
+  function autoCompleteSpinner(nowMs, meta) {
+    const hit = meta.targetId
+      ? hits.find((h) => !h.resolved && h.id === meta.targetId)
+      : currentOpen('spinner');
+    if (!hit) return { judgment: 'miss', hit: null, deltaMs: null };
+    beginSpinner(Math.max(nowMs, hit.t), hit.id);
+    hit.spinnerFill = hit.fillRequired;
+    return endSpinner(hit);
   }
 
   function tick(nowMs) {
     const missed = [];
     for (const h of hits) {
       if (h.resolved) continue;
-      if (nowMs >= missDeadline(h.t, w)) {
+      if (h.kind === 'slider' && h.sliderStarted) {
+        // Auto-end if past end + good window
+        if (nowMs >= missDeadline(h, w)) {
+          const out = endSlider(nowMs, h);
+          missed.push(h);
+          void out;
+        }
+        continue;
+      }
+      if (h.kind === 'spinner' && h.spinnerHeld) {
+        if (nowMs >= h.endT) {
+          endSpinner(h);
+          // not a "miss flash" if filled — still push for UI update
+          missed.push(h);
+        }
+        continue;
+      }
+      if (nowMs >= missDeadline(h, w)) {
         resolve(h, 'miss');
         missed.push(h);
       }
@@ -349,8 +707,7 @@ export function createHitTracker(chart, windows) {
         id: h.id,
         t: h.t,
         kind: h.kind,
-        lane: h.lane,
-        dir: h.dir,
+        number: h.number,
         judgment: h.judgment,
       })),
     };
@@ -360,6 +717,15 @@ export function createHitTracker(chart, windows) {
     hits,
     windows: w,
     input,
+    tapCircle,
+    beginSlider,
+    moveSlider,
+    endSlider,
+    beginSpinner,
+    spinSpinner,
+    endSpinner,
+    currentCircle,
+    currentOpen,
     tick,
     isComplete,
     result,
@@ -375,20 +741,41 @@ export function normalizeType(type) {
   return type;
 }
 
+/** Map chart type → primary note kind */
+export function typeToKind(type) {
+  const t = normalizeType(type);
+  if (t === 'sword') return 'slider';
+  if (t === 'projectile') return 'spinner';
+  return 'circle';
+}
+
 if (typeof window !== 'undefined') {
   window.CareerChartEngine = {
     DEFAULT_WINDOWS,
+    CIRCLE_APPROACH_MS,
+    SLIDER_DEFAULT_DURATION_MS,
+    SLIDER_MAX_PATH_LEN,
+    SPINNER_FILL_REQUIRED,
+    SPINNER_PERFECT_FILL,
+    SPINNER_GOOD_FILL,
     APPROACH_MS,
     judge,
     judgmentScore,
     aggregateJudgment,
     accuracyFromTallies,
+    combineJudgments,
+    clamp01,
+    dist,
+    pathLength,
+    sliderDurationMs,
+    pathProgress,
+    judgeSpinnerFill,
     expandNoteHits,
     scheduleHits,
     demoChart,
     missDeadline,
     createHitTracker,
-    inputMatchesHit,
     normalizeType,
+    typeToKind,
   };
 }

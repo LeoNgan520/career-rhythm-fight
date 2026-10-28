@@ -19,7 +19,7 @@
 - Bout: `#chart-overlay` is `position: fixed; inset: 0; z-index` above fighters; `#chart-mount` fills the overlay; add `#app.chart-open` while the chart is up (host dims/hides the stage).
 - Demo: `#mount` is `position: fixed; inset: 0` (viewport).
 
-Do **not** wrap the chart in a small centered card / max-width frame. ChartUI no longer uses a compact 540×180 stage.
+Do **not** wrap the chart in a small centered card / max-width frame. No scrolling highway / judge-line.
 
 ## CEO API
 
@@ -38,14 +38,24 @@ const handle = window.CareerCharts.start({
 
 Omit `windows` to use engine defaults **Perfect ±40ms / Good ±100ms**.
 
+## Type mapping (2026-10-28)
+
+| `type` | Object | Feel | Input |
+|--------|--------|------|-------|
+| `punch` | Approach circles 縮圈 | Enemy POINT / fist | Tap circle when ring meets edge · Space = current number |
+| `sword` | Fast sliders | Enemy LINE / slash | Drag along short path (snappy) |
+| `projectile` | Spinner 轉盤 | Guard / block | Hold + rotate around center until meter fills |
+
+Aliases: `shuriken`/`dart`/`hidden` → `projectile`; `fist` → `punch`.
+
 ## Bout shim
 
 `CareerCharts.play(type, mountEl, cb)` maps `shuriken`→`projectile` and capitalizes judgment for `RhythmCharts`.
 
-## Note kinds
+## Note kinds (engine)
 
-`tap` | `hold` | `combo` | `double` | `burst` | `swipe` (+ `lane` 0–2, `dir`, `holdMs`, `comboCount`)
+`circle` | `slider` | `spinner` — coords normalized 0..1. See `chart-engine.js` `demoChart()`.
 
 ## Pure engine
 
-`CareerChartEngine.judge(deltaMs)` · `createHitTracker(chart)` · ESM `import` from `chart-engine.js`.
+`CareerChartEngine.judge(deltaMs)` · `createHitTracker(chart)` · `sliderDurationMs` · `judgeSpinnerFill` · ESM `import` from `chart-engine.js`.
