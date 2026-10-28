@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>影炎 VS 赤焰 — Career Rhythm Fight</title>
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23120a18'/%3E%3Ccircle cx='11' cy='16' r='6' fill='%23a855f7'/%3E%3Ccircle cx='21' cy='16' r='6' fill='%23ff6a2a'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/bout.css" />
+  <link rel="stylesheet" href="art/cast-silhouettes.css" />
+  <link rel="stylesheet" href="charts/career-charts.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="fx-layer" aria-hidden="true"></div>
+
+    <!-- Corner HUD busts — OUTSIDE #camera so transforms don't throw them off-viewport -->
+    <div id="hud-player" class="hud-bust hud-player">
+      <img src="art/ying-yan-bust.png" alt="" class="hud-bust-img" />
+      <div class="hud-bust-meta">
+        <span class="fighter-name name-player">影炎</span>
+        <div class="hp-bar"><div id="hp-player" class="hp-fill player"></div></div>
+      </div>
+    </div>
+    <div id="hud-enemy" class="hud-bust hud-enemy">
+      <div class="hud-bust-meta">
+        <span class="fighter-name name-enemy">赤焰</span>
+        <div class="hp-bar"><div id="hp-enemy" class="hp-fill enemy"></div></div>
+      </div>
+      <img src="art/chi-yan-bust.png" alt="" class="hud-bust-img" />
+    </div>
+
+    <div id="camera" class="camera-idle">
+      <div class="parallax layer-bg"></div>
+      <div class="parallax layer-mid"></div>
+      <div class="vignette"></div>
+
+      <div id="arena" class="arena">
+        <div class="stage-floor"></div>
+        <div class="stage-glow"></div>
+
+        <!-- 影炎 — LEFT, dark purple, faces right -->
+        <div id="fighter-player" class="fighter fighter-player">
+          <div id="sprite-player" class="sprite sprite-player cast-fighter cast-ying-yan" data-cast="ying-yan">
+            <img id="img-player" src="art/ying-yan.png" alt="影炎" />
+            <div class="cast-hitflash" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <!-- 赤焰 — RIGHT, fiery, faces left -->
+        <div id="fighter-enemy" class="fighter fighter-enemy">
+          <div id="sprite-enemy" class="sprite sprite-enemy cast-fighter cast-chi-yan" data-cast="chi-yan">
+            <img id="img-enemy" src="art/chi-yan.png" alt="赤焰" />
+            <div class="cast-hitflash" aria-hidden="true"></div>
+            <div class="telegraph" id="telegraph" hidden>
+              <span class="telegraph-bang">！</span>
+              <span class="telegraph-label">敵方攻擊</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="parallax layer-fg"></div>
+    </div>
+
+    <div id="phase-caption" class="phase-caption" aria-live="polite">準備就緒</div>
+
+    <div id="telegraph-banner" class="telegraph-banner" hidden>
+      <span class="telegraph-banner-icon">⚠</span>
+      <span class="telegraph-banner-text">赤焰出招 · 準備格擋</span>
+    </div>
+
+    <div id="move-badge" class="move-badge" hidden>
+      <span class="move-badge-sub">敵方招式</span>
+      <span id="move-badge-label">拳</span>
+    </div>
+
+    <div id="result-flash" class="result-flash" hidden>
+      <span id="result-text">Perfect</span>
+    </div>
+
+    <div id="beat-info" class="beat-info" hidden>
+      <span id="beat-counter">招式 1 / 3</span>
+    </div>
+
+    <button id="btn-mute" type="button" class="btn-mute" title="靜音" aria-label="靜音">♪</button>
+
+    <div id="overlay-start" class="overlay">
+      <div class="panel">
+        <p class="eyebrow">CAREER RHYTHM FIGHT · DEMO</p>
+        <h1><span class="c-player">影炎</span> <span class="vs">VS</span> <span class="c-enemy">赤焰</span></h1>
+        <p class="tagline">節奏格擋 · 回合對戰</p>
+        <button id="btn-start" type="button" class="btn primary">開始對戰</button>
+        <p class="hint">Space / 點擊 格擋 · 拳 → 劍 → 暗器</p>
+      </div>
+    </div>
+
+    <div id="overlay-end" class="overlay" hidden>
+      <div class="panel">
+        <h2 id="end-title">對戰結束</h2>
+        <p id="end-detail"></p>
+        <button id="btn-restart" type="button" class="btn primary">再來一場</button>
+      </div>
+    </div>
+
+    <div id="chart-overlay" class="chart-overlay" hidden>
+      <div class="chart-frame">
+        <div class="chart-header">
+          <span>節奏格擋</span>
+          <span id="chart-type-label">拳</span>
+        </div>
+        <div id="chart-mount" class="chart-mount"></div>
+        <p class="chart-hint" id="chart-hint">Space / 點擊</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ChartUI: engine is ESM (sets window.CareerChartEngine); player is classic IIFE -->
+  <script type="module" src="js/boot.js"></script>
+</body>
+</html>

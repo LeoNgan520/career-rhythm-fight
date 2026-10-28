@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 320" width="200" height="320" role="img" aria-label="影炎">
+  <defs>
+    <linearGradient id="yingGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1a0a22"/>
+      <stop offset="45%" stop-color="#5a0a4a"/>
+      <stop offset="100%" stop-color="#c41e6a"/>
+    </linearGradient>
+  </defs>
+  <!-- Protagonist 影炎: screen-left, facing RIGHT -->
+  <g fill="url(#yingGrad)">
+    <ellipse cx="118" cy="42" rx="22" ry="26"/>
+    <polygon points="100,28 108,6 116,26"/>
+    <polygon points="116,22 130,2 134,28"/>
+    <polygon points="132,30 152,12 140,42"/>
+    <path d="M96 66 L140 66 L152 200 L88 210 L82 150 Z"/>
+    <path d="M88 200 L78 290 L98 286 L108 210 Z" opacity="0.9"/>
+    <path d="M128 200 L148 288 L168 280 L152 200 Z" opacity="0.9"/>
+    <path d="M140 80 L178 70 L186 90 L148 102 Z"/>
+    <ellipse cx="186" cy="82" rx="14" ry="12"/>
+    <path d="M96 92 L58 132 L72 144 L110 110 Z"/>
+    <ellipse cx="58" cy="140" rx="14" ry="12"/>
+    <path d="M104 210 L100 288 L120 292 L124 214 Z"/>
+    <path d="M128 210 L136 288 L156 284 L148 210 Z"/>
+  </g>
+  <g fill="#e02070" opacity="0.65">
+    <ellipse cx="186" cy="66" rx="8" ry="18"/>
+    <ellipse cx="50" cy="122" rx="7" ry="16"/>
+    <ellipse cx="130" cy="28" rx="10" ry="16"/>
+  </g>
+</svg>

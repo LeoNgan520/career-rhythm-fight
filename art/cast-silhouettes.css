@@ -1,0 +1,102 @@
+/* Career-CastArt — locked: 影炎 (protag) / 赤焰 (opp)
+   Facing: 影炎 left→right; 赤焰 right→left. No SNK marks. */
+
+.cast-fighter {
+  position: relative;
+  width: 120px;
+  height: 200px;
+  display: inline-block;
+}
+.cast-fighter::before,
+.cast-fighter::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* 影炎 — dark crimson, faces right */
+.cast-ying-yan::before {
+  top: 24px;
+  width: 56px;
+  height: 110px;
+  background: linear-gradient(160deg, #c41e6a, #5a0a4a 50%, #1a0a22);
+  border-radius: 16px 12px 28px 4px;
+  box-shadow:
+    30px -4px 0 -12px #a01858,
+    -24px 30px 0 -14px #3a0828,
+    0 -36px 0 -8px #7a1458;
+  animation: aura-ying 1.8s ease-in-out infinite;
+}
+.cast-ying-yan::after {
+  bottom: 0;
+  width: 72px;
+  height: 108px;
+  background: linear-gradient(180deg, #5a0a4a, #1a0a22);
+  clip-path: polygon(22% 0, 88% 0, 100% 100%, 58% 95%, 48% 35%, 38% 92%, 0 100%);
+  filter: drop-shadow(0 0 10px #c41e6a);
+}
+
+/* 赤焰 — bright fire, faces left */
+.cast-chi-yan::before {
+  top: 28px;
+  width: 52px;
+  height: 78px;
+  background: linear-gradient(200deg, #ffb347, #e83a12 55%, #7a0f0f);
+  border-radius: 22px 18px 10px 10px;
+  box-shadow:
+    -28px -8px 0 -10px #e83a12,
+    26px 28px 0 -12px #c42810,
+    0 -34px 0 -8px #ff6a2a;
+  animation: aura-chi 1.6s ease-in-out infinite;
+}
+.cast-chi-yan::after {
+  bottom: 0;
+  width: 64px;
+  height: 96px;
+  background:
+    linear-gradient(90deg, transparent 0 10px, #a01808 10px 28px, transparent 28px 36px, #c42810 36px 54px, transparent 54px),
+    linear-gradient(180deg, #ffcc66 0 10px, transparent 10px);
+  background-repeat: no-repeat;
+  clip-path: polygon(18% 0, 82% 0, 95% 100%, 60% 100%, 52% 40%, 45% 100%, 5% 100%);
+  filter: drop-shadow(0 0 8px #ff4a18);
+}
+
+@keyframes aura-ying {
+  0%, 100% { filter: drop-shadow(0 0 6px #c41e6a); }
+  50% { filter: drop-shadow(0 0 16px #ff4aa8); }
+}
+@keyframes aura-chi {
+  0%, 100% { filter: drop-shadow(0 0 6px #ff4a18); }
+  50% { filter: drop-shadow(0 0 16px #ffe066); }
+}
+
+/* Hit flash overlays — toggle .is-hit on sprite */
+.cast-hitflash {
+  position: absolute;
+  inset: -10% -20%;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  mix-blend-mode: screen;
+}
+.cast-ying-yan .cast-hitflash,
+.cast-hitflash.ying {
+  background-image: url("ying-yan-hitflash.svg");
+}
+.cast-chi-yan .cast-hitflash,
+.cast-hitflash.chi {
+  background-image: url("chi-yan-hitflash.svg");
+}
+.is-hit .cast-hitflash,
+.cast-hitflash.is-on {
+  animation: hitflash 280ms ease-out;
+}
+@keyframes hitflash {
+  0% { opacity: 0; transform: scale(0.85); filter: brightness(1.6); }
+  30% { opacity: 1; transform: scale(1.12); filter: brightness(1.8); }
+  100% { opacity: 0; transform: scale(1.22); filter: brightness(1.2); }
+}

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Career Charts — 節奏格擋譜面</title>
+  <link rel="stylesheet" href="career-charts.css" />
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(100% 60% at 50% 0%, #151b28 0%, #07080b 55%);
+      color: #e8ecf4;
+      font-family: "Segoe UI", "Noto Sans TC", system-ui, sans-serif;
+    }
+    .page {
+      max-width: 580px;
+      margin: 0 auto;
+      padding: 24px 14px 48px;
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+    .sub {
+      margin: 0 0 18px;
+      font-size: 12px;
+      color: #8b95a8;
+      line-height: 1.5;
+    }
+    #mount { min-height: 280px; }
+    #log {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border: 1px solid #2a3344;
+      border-radius: 10px;
+      background: rgba(12, 14, 18, 0.9);
+      font-size: 12px;
+      color: #8b95a8;
+      min-height: 44px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    #log strong { color: #e8ecf4; }
+    code {
+      color: #6ec8ff;
+      font-size: 11px;
+      word-break: break-all;
+    }
+    .variants {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 11px;
+      color: #8b95a8;
+    }
+    .variants div {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #243044;
+      background: rgba(0,0,0,0.25);
+    }
+    .variants b { color: #eef2f8; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>節奏格擋譜面</h1>
+    <p class="sub">
+      拳圓點 · 劍線斬 · 暗器連擊／爆發<br />
+      Perfect ±40ms · Good ±100ms · Space／點擊 · 劍可方向鍵或拖曳
+    </p>
+    <div id="mount"></div>
+    <div id="log">就緒。選譜面後按 <strong>Start</strong>。</div>
+    <div class="variants">
+      <div><b>hold</b> — 長按至尾端放開</div>
+      <div><b>double</b> — 雙擊連段</div>
+      <div><b>lanes</b> — Z／X 或點擊上中下</div>
+      <div><b>swipe / burst</b> — 劍方向 · 暗器爆發</div>
+    </div>
+    <p class="sub" style="margin-top:16px">
+      API:
+      <code>CareerCharts.start({ type:'punch'|'sword'|'projectile', onComplete({judgment,accuracy}) })</code>
+    </p>
+  </div>
+
+  <!-- engine is ESM (export + window.CareerChartEngine); player is classic IIFE -->
+  <script type="module">
+    import './chart-engine.js';
+
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'career-charts.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('career-charts.js failed'));
+      document.head.appendChild(s);
+    });
+
+    const log = document.getElementById('log');
+    CareerCharts.mountDemo(document.getElementById('mount'), {
+      type: 'punch',
+      onComplete(result) {
+        const pct = Math.round(result.accuracy * 100);
+        log.innerHTML =
+          '完成 · judgment=<strong>' + result.judgment +
+          '</strong> · accuracy=<strong>' + pct + '%</strong>' +
+          ' · P' + result.tallies.perfect +
+          ' G' + result.tallies.good +
+          ' M' + result.tallies.miss +
+          ' · max combo ' + result.comboMax;
+      },
+    });
+  </script>
+</body>
+</html>

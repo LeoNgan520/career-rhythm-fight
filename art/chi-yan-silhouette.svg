@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 320" width="200" height="320" role="img" aria-label="赤焰">
+  <defs>
+    <linearGradient id="chiGrad" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#7a0f0f"/>
+      <stop offset="45%" stop-color="#e83a12"/>
+      <stop offset="100%" stop-color="#ffb347"/>
+    </linearGradient>
+  </defs>
+  <!-- Opponent 赤焰: screen-right, facing LEFT -->
+  <g fill="url(#chiGrad)">
+    <ellipse cx="82" cy="42" rx="22" ry="26"/>
+    <polygon points="100,28 92,8 84,26"/>
+    <polygon points="84,22 72,4 68,28"/>
+    <polygon points="70,30 52,14 62,40"/>
+    <path d="M60 66 L104 66 L112 150 L52 150 Z"/>
+    <path d="M104 78 L142 58 L150 78 L116 98 Z"/>
+    <ellipse cx="150" cy="72" rx="14" ry="12"/>
+    <path d="M60 90 L22 130 L36 142 L74 108 Z"/>
+    <ellipse cx="22" cy="138" rx="14" ry="12"/>
+    <path d="M60 150 L42 280 L66 286 L76 160 Z"/>
+    <path d="M88 150 L108 282 L132 276 L108 150 Z"/>
+    <rect x="54" y="138" width="56" height="12" rx="3" fill="#ffcc66" opacity="0.85"/>
+  </g>
+  <g fill="#ff6a2a" opacity="0.7">
+    <ellipse cx="150" cy="56" rx="8" ry="18"/>
+    <ellipse cx="18" cy="120" rx="7" ry="16"/>
+    <ellipse cx="70" cy="70" rx="18" ry="10"/>
+  </g>
+</svg>

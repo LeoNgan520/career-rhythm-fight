@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="赤焰 hit flash">
+  <defs>
+    <radialGradient id="cf" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffe066" stop-opacity="0.95"/>
+      <stop offset="50%" stop-color="#ff4a18" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="100" cy="100" r="90" fill="url(#cf)"/>
+  <g stroke="#ffb347" stroke-width="3" fill="none" opacity="0.9">
+    <line x1="100" y1="16" x2="100" y2="48"/><line x1="100" y1="152" x2="100" y2="184"/>
+    <line x1="16" y1="100" x2="48" y2="100"/><line x1="152" y1="100" x2="184" y2="100"/>
+    <line x1="38" y1="38" x2="60" y2="60"/><line x1="140" y1="140" x2="162" y2="162"/>
+    <line x1="162" y1="38" x2="140" y2="60"/><line x1="60" y1="140" x2="38" y2="162"/>
+  </g>
+  <!-- facing-left lean blob -->
+  <path fill="#140808" stroke="#ff6a2a" stroke-width="2.5"
+    d="M122 55 c-8-18-28-22-40-8-10 10-18 8-28 2-4 14 2 28 14 34-16 8-22 28-8 44 18 12 34 8 46-2 14 14 36 10 42-8 8-22-6-40-26-48z"/>
+</svg>
