@@ -1,36 +1,42 @@
 # Career-ChartUI — STATUS
 
-**As of:** 2026-10-28 ~12:30 HKT (Asia/Hong_Kong)  
+**As of:** 2026-10-28 ~13:00 HKT (Asia/Hong_Kong)  
 **Path:** `/workspace/career-rhythm-fight/charts/`
 
-## Rewrite (2026-10-28) — 應援團 objects (CEO confirmed)
+## Rewrite v3 — 三国武功切磋 (CEO locked)
 
-**DROPPED:** scrolling notes into a vertical/horizontal judge line / sheet-music highway.
+**REMOVED:** spinner primary gameplay · toy-minigame framing · highway/staff.
 
-**SHIPPED:** fullscreen playfield with three object types:
+**SHIPPED:** fullscreen martial objects — all 8 types:
 
-| `type` | Object | Engine kind | Input |
-|--------|--------|-------------|-------|
-| `punch` | Approach circles 縮圈 | `circle` | Tap when ring meets edge; Space = current # |
-| `sword` | Fast sliders | `slider` | Drag short path (whip-slash, 160–280ms) |
-| `projectile` | Spinner 轉盤 | `spinner` | Hold + rotate; fill meter = block |
+| `type` | 中文 | kind | Input |
+|--------|------|------|-------|
+| `punch` | 拳縮圈 | `circle` | Tap when ring meets edge |
+| `sword` | 劍滑斬 | `slider` | Fast short drag |
+| `brace` | 架開 | `brace` | Hold through clash |
+| `deflect` | 撥飛 | `deflect` | Outward swipe |
+| `charge` | 蓄力 | `charge` | Hold · release on beat |
+| `dodge` | 方向閃 | `dodge` | Swipe L/R/back |
+| `lrCombo` | 左右連擊 | `lrCombo` | Sequential side taps |
+| `arc` | 弧斬 | `arc` | Arc path follow |
+
+Aliases: `projectile`/`shuriken`/`dart`/`hidden`/`spinner` → `deflect`; `fist` → `punch`.
 
 | Change | Detail |
 |--------|--------|
-| `chart-engine.js` | Circles / sliders / spinners; path helpers; spinner fill thresholds; no highway schedule |
-| `career-charts.js` | Canvas draws rings / paths / spinners; no judge-line draw path |
-| `career-charts.css` | Fullscreen; centered flash; radial vignette (not corridor) |
-| `test-engine.mjs` | Windows + slider speed + spinner fill → `PASS` |
-| Docs | EMBED / STATUS / README type mapping |
+| `chart-engine.js` | 8 kinds; spinner deleted; alias normalize; demo charts |
+| `career-charts.js` | Canvas telegraphs for all 8; `onHit` SFX hook; tabs |
+| `career-charts.css` | Fullscreen; 8 tab accents; corner HUD |
+| `demo.html` | Tabs: 拳縮圈\|劍滑斬\|架開\|撥飛\|蓄力\|方向閃\|左右連擊\|弧斬 |
+| `test-engine.mjs` | PASS covering each kind + aliases |
+| Docs | EMBED / STATUS / README type id table |
 
-Deferred: art/music polish, extra VFX, hold-gauge UI, Canvas Page.
-
-## API (unchanged CEO lock — CombatFeel re-host OK)
+## API
 
 ```js
 CareerCharts.start({
-  type: 'punch'|'sword'|'projectile',
-  container,           // fullscreen (100% of overlay / viewport)
+  type: 'punch'|'sword'|'brace'|'deflect'|'charge'|'dodge'|'lrCombo'|'arc',
+  container,
   onComplete({ judgment, accuracy, tallies, comboMax })
 })
 // → { stop, reset, getResult, beginPlay }
@@ -38,16 +44,15 @@ CareerCharts.start({
 
 ## Timing
 
-- Perfect `|Δ| ≤ 40ms` · Good `|Δ| ≤ 100ms` · else Miss (circles + slider start/end)
-- Circle approach: 800ms ring shrink
-- Slider duration: snappy 160–280ms from path length
-- Spinner: fill ≥1.0 perfect · ≥0.55 good · else miss (~1.5 turns)
+- Perfect ±40ms · Good ±100ms (tap/release/start) — **unchanged**
+- Brace: hold length = `durationMs` (default 280); no wider ± window
+- Charge undercharge = ratio of `minChargeMs`, not widened ±
 
 ## Verify
 
 ```bash
 node /workspace/career-rhythm-fight/charts/test-engine.mjs   # must PASS
-# open charts/demo.html — tabs 拳=circles / 劍=sliders / 暗器=spinner, fullscreen
+# open charts/demo.html — each of 8 tabs playable fullscreen
 ```
 
-Sanity: no leftover highway/judge-line as primary draw mode; `resizeCanvas` must not hardcode `h = 180`.
+**Ready for CombatFeel wire-up** (aliases keep old bout `projectile` calls working → deflect).

@@ -1,7 +1,8 @@
 /**
- * audio.js — ORIGINAL procedural WebAudio battle bed + SFX.
- * Oscillators + noise only. No copyrighted melodies, samples, or anime themes.
- * Self-generated fight-energy bed (drums / bass / brass stabs / pad / riser).
+ * audio.js — ORIGINAL procedural 傳統戰鼓 (ancient large-drum / 鼉鼓) bed + SFX.
+ * Oscillators + noise only. No copyrighted melodies, samples, anime themes, or licensed taiko packs.
+ * Layers: deep sub-100Hz boom hits, soft wood knocks, rare sparse fills, optional low drone.
+ * Tuned for 低沉大鼓共鳴 — not modern kick/rim electronic.
  */
 (function (global) {
   'use strict';
@@ -15,8 +16,8 @@
   var bedTimers = [];
   var started = false;
 
-  // ~138 BPM battle pulse
-  var BPM = 138;
+  // Locked BPM for future chart beat-lock (matches audio/*.wav generators)
+  var BPM = 132;
   var BEAT = 60 / BPM;
   var BAR = BEAT * 4;
 
@@ -29,10 +30,10 @@
     master.gain.value = 0.68;
     master.connect(ctx.destination);
     musicGain = ctx.createGain();
-    musicGain.gain.value = 0.38;
+    musicGain.gain.value = 0.42;
     musicGain.connect(master);
     sfxGain = ctx.createGain();
-    sfxGain.gain.value = 0.5;
+    sfxGain.gain.value = 0.62;
     sfxGain.connect(master);
     return ctx;
   }
@@ -88,171 +89,159 @@
     src.start();
   }
 
-  /* ---- bed building blocks (procedural, original) ---- */
+  /* ---- bed building blocks: 低沉大鼓 / 鼉鼓 procedural (original) ---- */
 
-  function makeNoiseBuffer(dur) {
-    var n = Math.floor(ctx.sampleRate * dur);
-    var buf = ctx.createBuffer(1, n, ctx.sampleRate);
-    var data = buf.getChannelData(0);
-    for (var i = 0; i < n; i++) data[i] = Math.random() * 2 - 1;
-    return buf;
-  }
+  /**
+   * Deep resonant war drum: long sub boom + body sweep + soft membrane.
+   * Sub-100Hz body, long decay — ancient large-drum feel, not snappy kick.
+   */
+  function playWarDrum(t, amp) {
+    amp = amp == null ? 0.62 : amp;
 
-  function playKick(t) {
+    // Primary body: low sweep into sub (start ~58Hz → ~26Hz)
     var o = ctx.createOscillator();
     o.type = 'sine';
-    o.frequency.setValueAtTime(140, t);
-    o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    o.frequency.setValueAtTime(58, t);
+    o.frequency.exponentialRampToValueAtTime(26, t + 0.38);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.55, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    g.gain.exponentialRampToValueAtTime(amp, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(amp * 0.35, t + 0.22);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.72);
     o.connect(g);
     g.connect(musicGain);
     o.start(t);
-    o.stop(t + 0.25);
+    o.stop(t + 0.78);
     track(o);
 
-    // click transient
+    // Dedicated sub boom (~42Hz) — long resonant tail (鼉鼓共鳴)
+    var sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(46, t);
+    sub.frequency.exponentialRampToValueAtTime(32, t + 0.55);
+    var sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(amp * 0.72, t + 0.018);
+    sg.gain.exponentialRampToValueAtTime(amp * 0.28, t + 0.35);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+    var subLp = ctx.createBiquadFilter();
+    subLp.type = 'lowpass';
+    subLp.frequency.value = 90;
+    subLp.Q.value = 0.9;
+    sub.connect(subLp);
+    subLp.connect(sg);
+    sg.connect(musicGain);
+    sub.start(t);
+    sub.stop(t + 1.0);
+    track(sub);
+
+    // Soft membrane transient (low band — not bright stick crack)
+    var n = Math.floor(ctx.sampleRate * 0.08);
+    var buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    var data = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.022));
+    var src = ctx.createBufferSource();
+    src.buffer = buf;
+    var bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 380;
+    bp.Q.value = 0.7;
+    var ng = ctx.createGain();
+    ng.gain.setValueAtTime(amp * 0.28, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    src.connect(bp);
+    bp.connect(ng);
+    ng.connect(musicGain);
+    src.start(t);
+    src.stop(t + 0.09);
+    track(src);
+
+    // Soft attack tone (low triangle, short — not snappy rim)
     var click = ctx.createOscillator();
     click.type = 'triangle';
-    click.frequency.setValueAtTime(180, t);
-    click.frequency.exponentialRampToValueAtTime(60, t + 0.04);
+    click.frequency.setValueAtTime(110, t);
+    click.frequency.exponentialRampToValueAtTime(48, t + 0.06);
     var cg = ctx.createGain();
-    cg.gain.setValueAtTime(0.18, t);
-    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    cg.gain.setValueAtTime(amp * 0.14, t);
+    cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
     click.connect(cg);
     cg.connect(musicGain);
     click.start(t);
-    click.stop(t + 0.06);
+    click.stop(t + 0.08);
     track(click);
   }
 
-  function playSnare(t) {
-    var n = Math.floor(ctx.sampleRate * 0.18);
-    var buf = ctx.createBuffer(1, n, ctx.sampleRate);
-    var data = buf.getChannelData(0);
-    for (var i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.06));
-    var src = ctx.createBufferSource();
-    src.buffer = buf;
-    var bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1800;
-    bp.Q.value = 0.7;
-    var g = ctx.createGain();
-    g.gain.setValueAtTime(0.28, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    src.connect(bp);
-    bp.connect(g);
-    g.connect(musicGain);
-    src.start(t);
-    src.stop(t + 0.2);
-    track(src);
-
-    // body tone
-    var o = ctx.createOscillator();
-    o.type = 'triangle';
-    o.frequency.setValueAtTime(180, t);
-    o.frequency.exponentialRampToValueAtTime(110, t + 0.08);
-    var og = ctx.createGain();
-    og.gain.setValueAtTime(0.12, t);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
-    o.connect(og);
-    og.connect(musicGain);
-    o.start(t);
-    o.stop(t + 0.12);
-    track(o);
-  }
-
-  function playHat(t, open) {
-    var n = Math.floor(ctx.sampleRate * (open ? 0.12 : 0.04));
-    var buf = ctx.createBuffer(1, n, ctx.sampleRate);
-    var data = buf.getChannelData(0);
-    for (var i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * (open ? 0.05 : 0.012)));
-    var src = ctx.createBufferSource();
-    src.buffer = buf;
-    var hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 7000;
-    var g = ctx.createGain();
-    g.gain.setValueAtTime(open ? 0.09 : 0.07, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + (open ? 0.11 : 0.035));
-    src.connect(hp);
-    hp.connect(g);
-    g.connect(musicGain);
-    src.start(t);
-    src.stop(t + (open ? 0.14 : 0.05));
-    track(src);
-  }
-
-  function playBrassStab(t, freq) {
-    var freqs = [freq, freq * 1.005, freq * 0.497];
-    var types = ['sawtooth', 'sawtooth', 'square'];
+  /** Soft wood knock (ancient stick-on-rim) — muted, mid-low, not hat/rim snap. */
+  function playWoodRim(t, amp) {
+    amp = amp == null ? 0.10 : amp;
+    var freqs = [420, 680, 280];
+    var gains = [0.5, 0.22, 0.28];
     for (var i = 0; i < freqs.length; i++) {
       var o = ctx.createOscillator();
-      o.type = types[i];
+      o.type = 'sine';
       o.frequency.setValueAtTime(freqs[i], t);
-      var f = ctx.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.setValueAtTime(2200, t);
-      f.frequency.exponentialRampToValueAtTime(900, t + 0.18);
-      f.Q.value = 4;
       var g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.085, t + 0.012);
-      g.gain.setValueAtTime(0.085, t + 0.08);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-      o.connect(f);
-      f.connect(g);
+      g.gain.exponentialRampToValueAtTime(amp * gains[i], t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.055);
+      o.connect(g);
       g.connect(musicGain);
       o.start(t);
-      o.stop(t + 0.22);
+      o.stop(t + 0.065);
       track(o);
     }
-  }
-
-  function playRiser(t) {
-    var n = Math.floor(ctx.sampleRate * 1.6);
+    var n = Math.floor(ctx.sampleRate * 0.035);
     var buf = ctx.createBuffer(1, n, ctx.sampleRate);
     var data = buf.getChannelData(0);
-    for (var i = 0; i < n; i++) data[i] = Math.random() * 2 - 1;
+    for (var j = 0; j < n; j++) data[j] = (Math.random() * 2 - 1) * Math.exp(-j / (ctx.sampleRate * 0.012));
     var src = ctx.createBufferSource();
     src.buffer = buf;
     var bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.Q.value = 2.5;
-    bp.frequency.setValueAtTime(200, t);
-    bp.frequency.exponentialRampToValueAtTime(4800, t + 1.5);
+    bp.frequency.value = 900;
+    bp.Q.value = 0.6;
+    var ng = ctx.createGain();
+    ng.gain.setValueAtTime(amp * 0.22, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.028);
+    src.connect(bp);
+    bp.connect(ng);
+    ng.connect(musicGain);
+    src.start(t);
+    src.stop(t + 0.04);
+    track(src);
+  }
+
+  /** Deep mid drum for rare fills (not bright tom). */
+  function playTom(t, freq, amp) {
+    freq = freq || 95;
+    amp = amp == null ? 0.32 : amp;
+    var o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.42, t + 0.22);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.14, t + 1.35);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.55);
-    src.connect(bp);
-    bp.connect(g);
+    g.gain.exponentialRampToValueAtTime(amp, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    o.connect(g);
     g.connect(musicGain);
-    src.start(t);
-    src.stop(t + 1.6);
-    track(src);
-
-    // rising saw sweep (original interval, not a motif)
-    var o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(55, t);
-    o.frequency.exponentialRampToValueAtTime(220, t + 1.5);
-    var og = ctx.createGain();
-    og.gain.setValueAtTime(0.0001, t);
-    og.gain.linearRampToValueAtTime(0.06, t + 1.3);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 1.55);
-    var lf = ctx.createBiquadFilter();
-    lf.type = 'lowpass';
-    lf.frequency.setValueAtTime(400, t);
-    lf.frequency.exponentialRampToValueAtTime(3000, t + 1.5);
-    o.connect(lf);
-    lf.connect(og);
-    og.connect(musicGain);
     o.start(t);
-    o.stop(t + 1.6);
+    o.stop(t + 0.36);
     track(o);
+
+    // soft sub under fill hit
+    var sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(Math.min(freq * 0.5, 48), t);
+    var sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(amp * 0.4, t + 0.01);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    sub.connect(sg);
+    sg.connect(musicGain);
+    sub.start(t);
+    sub.stop(t + 0.42);
+    track(sub);
   }
 
   function clearBedTimers() {
@@ -278,120 +267,77 @@
     started = true;
     var t0 = ctx.currentTime + 0.05;
 
-    // --- Layer: heavy low bass / drone (saw + square, lowpass, slight LFO) ---
-    var bass = ctx.createOscillator();
-    bass.type = 'sawtooth';
-    bass.frequency.value = 55; // A1
-    var bass2 = ctx.createOscillator();
-    bass2.type = 'square';
-    bass2.frequency.value = 55.3;
-    var bassLp = ctx.createBiquadFilter();
-    bassLp.type = 'lowpass';
-    bassLp.frequency.value = 220;
-    bassLp.Q.value = 2;
-    var bassG = ctx.createGain();
-    bassG.gain.value = 0.16;
-    var bassLfo = ctx.createOscillator();
-    bassLfo.type = 'sine';
-    bassLfo.frequency.value = 0.18;
-    var bassLfoG = ctx.createGain();
-    bassLfoG.gain.value = 80;
-    bassLfo.connect(bassLfoG);
-    bassLfoG.connect(bassLp.frequency);
-    bass.connect(bassLp);
-    bass2.connect(bassLp);
-    bassLp.connect(bassG);
-    bassG.connect(musicGain);
-    bass.start(t0);
-    bass2.start(t0);
-    bassLfo.start(t0);
-    track(bass);
-    track(bass2);
-    track(bassLfo);
+    // --- Layer: low drone only (sine + soft detune) — no brass / pad lead ---
+    var drone = ctx.createOscillator();
+    drone.type = 'sine';
+    drone.frequency.value = 41.2; // E1-ish — deeper than A1
+    var drone2 = ctx.createOscillator();
+    drone2.type = 'sine';
+    drone2.frequency.value = 41.45;
+    var droneSub = ctx.createOscillator();
+    droneSub.type = 'sine';
+    droneSub.frequency.value = 27.5;
+    var droneLp = ctx.createBiquadFilter();
+    droneLp.type = 'lowpass';
+    droneLp.frequency.value = 120;
+    droneLp.Q.value = 0.8;
+    var droneG = ctx.createGain();
+    droneG.gain.value = 0.13;
+    var droneLfo = ctx.createOscillator();
+    droneLfo.type = 'sine';
+    droneLfo.frequency.value = 0.09;
+    var droneLfoG = ctx.createGain();
+    droneLfoG.gain.value = 0.03;
+    droneLfo.connect(droneLfoG);
+    droneLfoG.connect(droneG.gain);
+    drone.connect(droneLp);
+    drone2.connect(droneLp);
+    droneSub.connect(droneLp);
+    droneLp.connect(droneG);
+    droneG.connect(musicGain);
+    drone.start(t0);
+    drone2.start(t0);
+    droneSub.start(t0);
+    droneLfo.start(t0);
+    track(drone);
+    track(drone2);
+    track(droneSub);
+    track(droneLfo);
 
-    // sub sine for weight
-    var sub = ctx.createOscillator();
-    sub.type = 'sine';
-    sub.frequency.value = 55;
-    var subG = ctx.createGain();
-    subG.gain.value = 0.14;
-    sub.connect(subG);
-    subG.connect(musicGain);
-    sub.start(t0);
-    track(sub);
-
-    // --- Layer: tense pad / strings (two detuned saws, slow filter motion) ---
-    var pad1 = ctx.createOscillator();
-    pad1.type = 'sawtooth';
-    pad1.frequency.value = 110; // A2
-    var pad2 = ctx.createOscillator();
-    pad2.type = 'sawtooth';
-    pad2.frequency.value = 110.7;
-    var pad3 = ctx.createOscillator();
-    pad3.type = 'triangle';
-    pad3.frequency.value = 164.81; // E3 fifth — static interval, not a melody
-    var padLp = ctx.createBiquadFilter();
-    padLp.type = 'lowpass';
-    padLp.frequency.value = 600;
-    padLp.Q.value = 1.2;
-    var padG = ctx.createGain();
-    padG.gain.value = 0.055;
-    var padLfo = ctx.createOscillator();
-    padLfo.type = 'sine';
-    padLfo.frequency.value = 0.07;
-    var padLfoG = ctx.createGain();
-    padLfoG.gain.value = 350;
-    padLfo.connect(padLfoG);
-    padLfoG.connect(padLp.frequency);
-    pad1.connect(padLp);
-    pad2.connect(padLp);
-    pad3.connect(padLp);
-    padLp.connect(padG);
-    padG.connect(musicGain);
-    pad1.start(t0);
-    pad2.start(t0);
-    pad3.start(t0);
-    padLfo.start(t0);
-    track(pad1);
-    track(pad2);
-    track(pad3);
-    track(padLfo);
-
-    // --- Layer: kick / snare / hat loop + brass stabs + occasional riser ---
+    // --- Layer: sparse deep war-drum pulse @ BPM 132 (few wood knocks, rare fills) ---
     var barIndex = 0;
-    // brass stab root notes cycling a simple original power progression (A / C / G / A)
-    var brassRoots = [110, 130.81, 98, 110];
 
     function scheduleBar() {
       if (!started || muted || !ctx) return;
       var now = ctx.currentTime;
       var barStart = now + 0.02;
 
-      // 16th-grid hats + kicks/snares for one bar
-      for (var step = 0; step < 16; step++) {
-        var t = barStart + step * (BEAT / 4);
-        // closed hats on most 16ths
-        if (step % 2 === 0) playHat(t, false);
-        else if (step === 7 || step === 15) playHat(t, true);
+      // Deep war drums on 1 and 3 (body of the groove)
+      playWarDrum(barStart, 0.68);
+      playWarDrum(barStart + BEAT * 2, 0.55);
 
-        // kick on 1 and 3 (+ syncopated on beat 2.5 / 4.5-ish)
-        if (step === 0 || step === 8 || step === 10 || step === 14) playKick(t);
-        // snare on 2 and 4
-        if (step === 4 || step === 12) playSnare(t);
+      // Syncopated answer every other bar (still deep, quieter)
+      if (barIndex % 2 === 1) {
+        playWarDrum(barStart + BEAT * 3.5, 0.36);
       }
 
-      // synth-brass stabs on off-beats (and of 2, and of 4)
-      var root = brassRoots[barIndex % brassRoots.length];
-      playBrassStab(barStart + BEAT * 1.5, root);
-      playBrassStab(barStart + BEAT * 3.5, root * 1.5);
+      // Soft wood knocks only on 2 and 4 — no offbeat hats
+      playWoodRim(barStart + BEAT, 0.11);
+      playWoodRim(barStart + BEAT * 3, 0.09);
 
-      // every 8 bars: short noise/filter riser for escalation
-      if (barIndex > 0 && barIndex % 8 === 0) {
-        playRiser(barStart);
+      // Rare fill every 8 bars (deep drums into downbeat — no modern tom roll)
+      if (barIndex > 0 && barIndex % 8 === 7) {
+        playTom(barStart + BEAT * 3.0, 105, 0.30);
+        playTom(barStart + BEAT * 3.35, 80, 0.34);
+        playWarDrum(barStart + BEAT * 3.7, 0.58);
+      }
+
+      // Slight denser boom every 16 bars (escalation without brass / snappy rims)
+      if (barIndex > 0 && barIndex % 16 === 0) {
+        playWarDrum(barStart + BEAT * 1.5, 0.32);
       }
 
       barIndex++;
-      // schedule next bar slightly before end to avoid gaps
       scheduleTimer(scheduleBar, BAR * 1000 - 30);
     }
 
@@ -406,7 +352,7 @@
         var t = ctx.currentTime;
         musicGain.gain.cancelScheduledValues(t);
         musicGain.gain.setValueAtTime(musicGain.gain.value, t);
-        musicGain.gain.linearRampToValueAtTime(0.38, t + 0.15);
+        musicGain.gain.linearRampToValueAtTime(0.42, t + 0.15);
       }
     },
     startBed: startBed,
@@ -436,21 +382,29 @@
       tone(660, 0.12, 'sine', 0.1, ensure() ? ctx.currentTime + 0.06 : 0);
     },
     perfect: function () {
-      tone(523.25, 0.12, 'sine', 0.22);
-      tone(659.25, 0.14, 'sine', 0.18, ensure() ? ctx.currentTime + 0.06 : 0);
-      tone(783.99, 0.2, 'triangle', 0.16, ensure() ? ctx.currentTime + 0.12 : 0);
+      // Strong martial impact + bright confirm (audible even if bed is loud / muted bed still leaves SFX)
+      noiseBurst(0.1, 0.28);
+      tone(90, 0.14, 'sine', 0.32);
+      tone(180, 0.1, 'square', 0.18);
+      tone(523.25, 0.11, 'sine', 0.26, ensure() ? ctx.currentTime + 0.04 : 0);
+      tone(783.99, 0.16, 'triangle', 0.22, ensure() ? ctx.currentTime + 0.09 : 0);
+      tone(1046.5, 0.18, 'sine', 0.14, ensure() ? ctx.currentTime + 0.14 : 0);
     },
     good: function () {
-      tone(392, 0.12, 'triangle', 0.18);
-      tone(494, 0.14, 'sine', 0.12, ensure() ? ctx.currentTime + 0.07 : 0);
+      noiseBurst(0.08, 0.18);
+      tone(110, 0.12, 'sine', 0.24);
+      tone(392, 0.12, 'triangle', 0.2);
+      tone(523.25, 0.14, 'sine', 0.14, ensure() ? ctx.currentTime + 0.07 : 0);
     },
     miss: function () {
-      noiseBurst(0.22, 0.2);
-      tone(70, 0.25, 'sawtooth', 0.2);
+      noiseBurst(0.28, 0.32);
+      tone(55, 0.32, 'sawtooth', 0.28);
+      tone(42, 0.4, 'sine', 0.18, ensure() ? ctx.currentTime + 0.05 : 0);
     },
     hit: function () {
-      noiseBurst(0.08, 0.12);
-      tone(150, 0.1, 'square', 0.1);
+      noiseBurst(0.12, 0.26);
+      tone(120, 0.12, 'square', 0.22);
+      tone(70, 0.16, 'sine', 0.2);
     },
     win: function () {
       [523, 659, 784, 1047].forEach(function (f, i) {

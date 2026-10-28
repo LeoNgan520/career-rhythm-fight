@@ -1,20 +1,27 @@
 /**
  * bout.js — Career Rhythm Fight v0.1
- * 影炎 (LEFT) vs 赤焰 (RIGHT)
+ * 影炎 (LEFT) vs 赤焰 (RIGHT) — 三国武功切磋
  * Charts via CareerCharts.start (chart-bridge). CastArt PNGs in art/.
  */
 (function () {
   'use strict';
 
+  /* ALL 8 martial moves — top-to-bottom spar order (not random) */
   var MOVE_QUEUE = [
-    { type: 'punch', label: '拳' },
-    { type: 'sword', label: '劍' },
-    { type: 'projectile', label: '暗器' },
+    { type: 'punch',   label: '點刺' },
+    { type: 'sword',   label: '橫斬' },
+    { type: 'brace',   label: '架開' },
+    { type: 'deflect', label: '撥飛' },
+    { type: 'charge',  label: '蓄力' },
+    { type: 'dodge',   label: '閃身' },
+    { type: 'lrCombo', label: '連擊' },
+    { type: 'arc',     label: '弧斬' },
   ];
 
-  var DAMAGE = { Perfect: 32, Good: 18, Miss: 0 };
-  var CHIP_GOOD = 6;
-  var CHIP_MISS = 24;
+  /* Balance for 8 beats: Miss run (~11×8=88) still finishes; Perfect ~16×8 can KO */
+  var DAMAGE = { Perfect: 16, Good: 9, Miss: 0 };
+  var CHIP_GOOD = 4;
+  var CHIP_MISS = 11;
 
   var state = {
     phase: 'idle',
@@ -243,6 +250,16 @@
       window._boutChartSession = window.CareerCharts.start({
         type: move.type,
         container: el.chartMount,
+        onHit: function (evt) {
+          // Per-note SFX; phaseResult still owns perfect/good/miss result stingers
+          if (!globalThis.BattleAudio) return;
+          var j = String((evt && evt.judgment) || '').toLowerCase();
+          if (j === 'perfect' || j === 'good') {
+            if (typeof BattleAudio.hit === 'function') BattleAudio.hit();
+          } else if (typeof BattleAudio.chartOpen === 'function') {
+            BattleAudio.chartOpen(); // light tap
+          }
+        },
         onComplete: function (result) {
           window._boutChartSession = null;
           onChartComplete({
@@ -331,7 +348,7 @@
 
   function endBout() {
     state.phase = 'idle';
-    setCaption('對戰結束');
+    setCaption('切磋結束');
     setCamera('idle');
     clearEmphasis();
     el.telegraph.hidden = true;
@@ -344,16 +361,16 @@
     var lose = state.hpPlayer <= 0;
     var win = state.hpEnemy <= 0 || (!lose && state.hpEnemy < state.hpPlayer);
     if (lose && state.hpEnemy > 0) {
-      el.endTitle.textContent = '敗北';
-      el.endDetail.textContent = '影炎未能格擋赤焰的攻勢。';
+      el.endTitle.textContent = '惜敗';
+      el.endDetail.textContent = '影炎未能接下赤焰八招——此番切磋，再練再戰。';
       audio('lose');
     } else if (win) {
-      el.endTitle.textContent = '勝利';
-      el.endDetail.textContent = '影炎擋下赤焰三招。Demo bout 完成。';
+      el.endTitle.textContent = '佔上風';
+      el.endDetail.textContent = '影炎擋下赤焰八式武功。切磋告一段落。';
       audio('win');
     } else {
-      el.endTitle.textContent = '對戰結束';
-      el.endDetail.textContent = '三招演示完畢（影炎 ' + Math.round(state.hpPlayer) + ' · 赤焰 ' + Math.round(state.hpEnemy) + '）。';
+      el.endTitle.textContent = '切磋結束';
+      el.endDetail.textContent = '八招演練完畢（影炎 ' + Math.round(state.hpPlayer) + ' · 赤焰 ' + Math.round(state.hpEnemy) + '）。平手亦是精進。';
     }
     el.overlayEnd.hidden = false;
   }

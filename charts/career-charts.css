@@ -1,4 +1,4 @@
-/* Career-ChartUI — fullscreen 應援團 objects (circles / sliders / spinners)
+/* Career-ChartUI — fullscreen 三国武功切磋 objects
    Root fills container 100%×100%. No highway / judge-line playfield. */
 
 .career-charts-root {
@@ -8,7 +8,12 @@
   --cc-judge: #e8c56a;
   --cc-punch: #ff6b4a;
   --cc-sword: #6ec8ff;
-  --cc-proj: #c084fc;
+  --cc-brace: #f0c674;
+  --cc-deflect: #c084fc;
+  --cc-charge: #fb923c;
+  --cc-dodge: #34d399;
+  --cc-lr: #f472b6;
+  --cc-arc: #38bdf8;
   --cc-text: #eef2f8;
   --cc-muted: #8b95a8;
   --cc-perfect: #5eead4;
@@ -45,22 +50,24 @@
 
 .cc-tabs {
   display: flex;
-  gap: 6px;
-  padding: 8px 10px 0;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px 0;
   flex: 0 0 auto;
   z-index: 3;
 }
 
 .cc-tab {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 4.5em;
   border: 1px solid var(--cc-line);
   background: rgba(255, 255, 255, 0.02);
   color: var(--cc-muted);
   border-radius: 8px;
-  padding: 7px 4px;
-  font-size: 12px;
+  padding: 6px 4px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   cursor: pointer;
   transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
@@ -85,10 +92,35 @@
   color: var(--cc-sword);
   box-shadow: 0 0 16px rgba(110, 200, 255, 0.15);
 }
-.cc-tab[data-type="projectile"].active {
-  border-color: var(--cc-proj);
-  color: var(--cc-proj);
+.cc-tab[data-type="brace"].active {
+  border-color: var(--cc-brace);
+  color: var(--cc-brace);
+  box-shadow: 0 0 16px rgba(240, 198, 116, 0.15);
+}
+.cc-tab[data-type="deflect"].active {
+  border-color: var(--cc-deflect);
+  color: var(--cc-deflect);
   box-shadow: 0 0 16px rgba(192, 132, 252, 0.15);
+}
+.cc-tab[data-type="charge"].active {
+  border-color: var(--cc-charge);
+  color: var(--cc-charge);
+  box-shadow: 0 0 16px rgba(251, 146, 60, 0.15);
+}
+.cc-tab[data-type="dodge"].active {
+  border-color: var(--cc-dodge);
+  color: var(--cc-dodge);
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.15);
+}
+.cc-tab[data-type="lrCombo"].active {
+  border-color: var(--cc-lr);
+  color: var(--cc-lr);
+  box-shadow: 0 0 16px rgba(244, 114, 182, 0.15);
+}
+.cc-tab[data-type="arc"].active {
+  border-color: var(--cc-arc);
+  color: var(--cc-arc);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.15);
 }
 
 /* Minimal corner HUD */
@@ -137,7 +169,12 @@
 
 .cc-type[data-type="punch"] { color: var(--cc-punch); }
 .cc-type[data-type="sword"] { color: var(--cc-sword); }
-.cc-type[data-type="projectile"] { color: var(--cc-proj); }
+.cc-type[data-type="brace"] { color: var(--cc-brace); }
+.cc-type[data-type="deflect"] { color: var(--cc-deflect); }
+.cc-type[data-type="charge"] { color: var(--cc-charge); }
+.cc-type[data-type="dodge"] { color: var(--cc-dodge); }
+.cc-type[data-type="lrCombo"] { color: var(--cc-lr); }
+.cc-type[data-type="arc"] { color: var(--cc-arc); }
 
 .cc-stats {
   display: flex;
@@ -200,7 +237,6 @@
   touch-action: none;
 }
 
-/* Flash centered on playfield (not highway judge-x) */
 .cc-flash {
   position: absolute;
   left: 50%;
@@ -287,8 +323,19 @@
 }
 
 .career-charts-root:has(.cc-tabs) .cc-hud {
-  top: 44px;
+  top: 52px;
 }
 .career-charts-root:has(.cc-actions) .cc-hint {
   bottom: 56px;
+}
+
+@media (max-width: 720px) {
+  .cc-tab {
+    font-size: 10px;
+    min-width: 3.8em;
+    padding: 5px 2px;
+  }
+  .career-charts-root:has(.cc-tabs) .cc-hud {
+    top: 64px;
+  }
 }

@@ -4,13 +4,41 @@
  * Fallback: auto Miss after short delay if ChartUI missing
  *
  * Bout uses: RhythmCharts.play(type, onComplete)
- * type: 'punch' | 'sword' | 'projectile'  (暗器 = projectile; 'shuriken' aliased)
+ * Canonical: punch|sword|brace|deflect|charge|dodge|lrCombo|arc
+ * Aliases: projectile/shuriken/spinner → deflect
  */
 (function (global) {
   'use strict';
 
-  var TYPE_MAP = { punch: 'punch', sword: 'sword', projectile: 'projectile', shuriken: 'projectile' };
-  var LABEL = { punch: '拳', sword: '劍', projectile: '暗器', shuriken: '暗器' };
+  var TYPE_MAP = {
+    punch: 'punch',
+    sword: 'sword',
+    brace: 'brace',
+    deflect: 'deflect',
+    charge: 'charge',
+    dodge: 'dodge',
+    lrCombo: 'lrCombo',
+    arc: 'arc',
+    projectile: 'deflect',
+    shuriken: 'deflect',
+    spinner: 'deflect',
+    dart: 'deflect',
+    hidden: 'deflect',
+    fist: 'punch',
+  };
+  var LABEL = {
+    punch: '點刺',
+    sword: '橫斬',
+    brace: '架開',
+    deflect: '撥飛',
+    charge: '蓄力',
+    dodge: '閃身',
+    lrCombo: '連擊',
+    arc: '弧斬',
+    projectile: '撥飛',
+    shuriken: '撥飛',
+    spinner: '撥飛',
+  };
   var session = null;
 
   function capitalize(j) {
@@ -36,6 +64,15 @@
       session = global.CareerCharts.start({
         type: mapped,
         container: mount,
+        onHit: function (evt) {
+          if (!global.BattleAudio) return;
+          var j = String((evt && evt.judgment) || '').toLowerCase();
+          if (j === 'perfect' || j === 'good') {
+            if (typeof global.BattleAudio.hit === 'function') global.BattleAudio.hit();
+          } else if (typeof global.BattleAudio.chartOpen === 'function') {
+            global.BattleAudio.chartOpen();
+          }
+        },
         onComplete: function (result) {
           session = null;
           cb({
