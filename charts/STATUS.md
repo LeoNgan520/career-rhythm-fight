@@ -1,61 +1,56 @@
 # Career-ChartUI — STATUS
 
-**As of:** 2026-10-28 ~02:20 HKT (Asia/Hong_Kong)  
+**As of:** 2026-10-28 ~12:15 HKT (Asia/Hong_Kong)  
 **Path:** `/workspace/career-rhythm-fight/charts/`
+
+## Rewrite (2026-10-28) — gameplay-first fullscreen
+
+CEO directive: **not** a sheet-music / card overlay. Chart occupies the **entire viewport** during play (應援團 feel). Notes + judge line are the screen.
+
+| Change | Detail |
+|--------|--------|
+| `career-charts.css` | Root fills container 100%×100%; no `max-width:540`; stage wrap flex-fills (no fixed 180px); corner HUD only |
+| `career-charts.js` | `resizeCanvas()` uses full wrap W×H; large notes via `noteScale(h)`; big vertical judge line (~22% from left); API unchanged |
+| Bout host | `#chart-overlay` `position:fixed; inset:0; z-index:60`; `#chart-mount` absolute fill; `#app.chart-open` hides stage |
+| Timing | Bout/bridge **no** `{perfectMs:55,goodMs:120}` override — engine defaults **Perfect ±40 / Good ±100** |
+| Deferred | Extra VFX, art/music polish, hold-gauge UI, Canvas Page |
 
 ## Priority 1 — shipped
 
 | File | Role |
 |------|------|
 | `chart-engine.js` | Pure timing/judge + note expand (hold/double/burst/combo/swipe/lanes) |
-| `career-charts.js` | `CareerCharts.start` + `play`/`destroy` bout shim + canvas HUD |
-| `career-charts.css` | Premium dark compact HUD |
-| `demo.html` | Standalone: tabs 拳｜劍｜暗器, Start, judgments, combo |
+| `career-charts.js` | `CareerCharts.start` + `play`/`destroy` bout shim + fullscreen canvas |
+| `career-charts.css` | Fullscreen playfield + minimal corner HUD |
+| `demo.html` | Standalone fullscreen: tabs 拳｜劍｜暗器, Start |
 | `test-engine.mjs` | Node asserts → `PASS` |
-| `EMBED.md` | CombatFeel integration |
+| `EMBED.md` | CombatFeel integration (fullscreen container) |
 | `README.md` | API quickref |
 
 ## API (unchanged CEO lock)
 
 ```js
-CareerCharts.start({ type: 'punch'|'sword'|'projectile', onComplete })
-// onComplete({ judgment: 'perfect'|'good'|'miss', accuracy: 0..1 })
+CareerCharts.start({
+  type: 'punch'|'sword'|'projectile',
+  container,           // should be fullscreen (100% of overlay / viewport)
+  onComplete({ judgment, accuracy })
+})
+// → { stop, reset, getResult, beginPlay }
 ```
 
 Map: punch=拳圓點, sword=劍線型, projectile=暗器線型+連擊 (+ burst).
 
-## Variants (on top of core three)
-
-- **hold** — press + release hits (`holdMs`, default 400)
-- **multi-lane** — lanes 0/1/2 (Z / Space / X or click Y thirds)
-- **swipe** (sword) — `dir` + arrow keys or drag
-- **burst** (projectile) — 4–6 tight flurry hits
-- **double** — 2-tap mini chain
-- **combo** — 2–4 taps (暗器)
-
 ## Timing
 
 - Perfect `|Δ| ≤ 40ms` · Good `|Δ| ≤ 100ms` · else Miss  
-- **No window retune** this pass (baseline kept).  
 - Approach lead: 1200ms · combo gap 70 · double 55 · burst 48
-
-## Open
-
-- Hold is press/release gated (no sustain gauge fill UI).
-- Swipe notes reject Space unless `dir` also supplied via arrows/drag.
-- Grok Canvas Page still optional / deferred.
-- Root `index.html` should load `charts/*.js` after placeholder for live bout — see EMBED.
 
 ## Verify
 
 ```bash
-node /workspace/career-rhythm-fight/charts/test-engine.mjs
-# open charts/demo.html
+node /workspace/career-rhythm-fight/charts/test-engine.mjs   # must PASS
+# open charts/demo.html — fullscreen notes, switch 拳/劍/暗器
+# open index.html — during block phase chart fills screen (no card frame)
 ```
 
-## CEO locks (2026-10-28 ~02:20 HKT)
-
-- Defer hold sustain-gauge UI.
-- Defer Canvas Page.
-- Core+variants as shipped = enough for bout wire.
-- Overnight: on-call for CombatFeel integration bugs; optional polish only.
+Sanity: `resizeCanvas` must not hardcode `h = 180`; CSS `.cc-stage-wrap` must not be `height: 180px`; bout must not pass custom windows.

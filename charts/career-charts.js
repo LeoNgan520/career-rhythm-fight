@@ -39,15 +39,22 @@
 
   function laneY(h, lane) {
     const mid = h * 0.5;
-    const spread = h * 0.22;
+    // Wider vertical spread on tall/fullscreen stages (應援團 lanes)
+    const spread = Math.max(h * 0.18, Math.min(h * 0.26, 110));
     const L = lane == null ? 1 : lane;
     return mid + (L - 1) * spread;
   }
 
+  /** Note radius / stroke scale from stage height (large notes on fullscreen). */
+  function noteScale(h) {
+    return Math.max(1, Math.min(h / 220, 3.2));
+  }
+
   function buildShell(container, type, withChrome) {
     const root = document.createElement('div');
-    root.className = 'career-charts-root';
+    root.className = 'career-charts-root cc-fullscreen';
     root.dataset.type = type;
+    if (withChrome) root.classList.add('cc-demo');
 
     let tabsHtml = '';
     let actionsHtml = '';
@@ -93,7 +100,7 @@
       '</div></div>' +
       '<div class="cc-stage-wrap">' +
       '<div class="cc-vignette"></div>' +
-      '<canvas class="cc-stage" width="520" height="180" aria-label="rhythm chart"></canvas>' +
+      '<canvas class="cc-stage" width="960" height="540" aria-label="rhythm chart"></canvas>' +
       '<div class="cc-flash" aria-live="polite"></div>' +
       '</div>' +
       '<p class="cc-hint" data-hint></p>' +
@@ -140,6 +147,13 @@
       document.body;
 
     const withChrome = !!options.demoChrome;
+    // Ensure mount fills its host (bout overlay / demo viewport)
+    if (container && container !== document.body) {
+      if (!container.style.position) container.style.position = 'relative';
+      if (!container.style.width) container.style.width = '100%';
+      if (!container.style.height) container.style.height = '100%';
+      if (!container.style.minHeight) container.style.minHeight = '100%';
+    }
     const root = buildShell(container, type, withChrome);
     const canvas = root.querySelector('canvas');
     const ctx = canvas.getContext('2d');
@@ -191,8 +205,11 @@
 
     function resizeCanvas() {
       const wrap = canvas.parentElement;
-      const w = Math.max(280, wrap.clientWidth || 520);
-      const h = 180;
+      // Fill container (fullscreen overlay / demo viewport mount) — never hardcode 180
+      let w = wrap.clientWidth || 0;
+      let h = wrap.clientHeight || 0;
+      if (w < 40) w = Math.max(280, (container.clientWidth || window.innerWidth || 960));
+      if (h < 40) h = Math.max(240, (container.clientHeight || window.innerHeight || 540));
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
@@ -215,11 +232,10 @@
     }
 
     function draw() {
-      const w = canvas.clientWidth || 520;
-      const h = canvas.clientHeight || 180;
+      const w = canvas.clientWidth || Math.max(280, window.innerWidth || 960);
+      const h = canvas.clientHeight || Math.max(240, window.innerHeight || 540);
       ctx.clearRect(0, 0, w, h);
 
-      // premium stage wash
       const grd = ctx.createLinearGradient(0, 0, 0, h);
       grd.addColorStop(0, '#0a0d14');
       grd.addColorStop(0.5, '#121826');
@@ -227,36 +243,40 @@
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, w, h);
 
-      const judgeX = Math.floor(w * 0.2);
+      // Judge line ~ left third (notes approach right → left) — 應援團-style
+      const judgeX = Math.floor(w * 0.22);
       const approach = Engine.APPROACH_MS;
       const tNow = playing ? nowMs() : 0;
       const accent = TYPE_COLOR[type] || '#e8c56a';
+      const sc = noteScale(h);
+      const padY = Math.max(24, Math.floor(h * 0.06));
 
       // lane guides
       for (let L = 0; L < 3; L++) {
         const y = laneY(h, L);
-        ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(judgeX, y);
-        ctx.lineTo(w - 10, y);
+        ctx.lineTo(w - 16, y);
         ctx.stroke();
       }
 
       // corridor glow
-      ctx.fillStyle = 'rgba(232,197,106,0.04)';
-      ctx.fillRect(judgeX, 16, w - judgeX - 8, h - 32);
+      ctx.fillStyle = 'rgba(232,197,106,0.035)';
+      ctx.fillRect(judgeX, padY, w - judgeX - 12, h - padY * 2);
 
-      // judge zone
-      ctx.fillStyle = 'rgba(232,197,106,0.12)';
-      ctx.fillRect(judgeX - 20, 14, 40, h - 28);
+      // Big judge zone
+      const zoneW = Math.max(48, Math.floor(28 * sc));
+      ctx.fillStyle = 'rgba(232,197,106,0.14)';
+      ctx.fillRect(judgeX - zoneW / 2, padY, zoneW, h - padY * 2);
       ctx.strokeStyle = '#e8c56a';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = 'rgba(232,197,106,0.45)';
-      ctx.shadowBlur = 12;
+      ctx.lineWidth = Math.max(3, 2.5 * sc * 0.55);
+      ctx.shadowColor = 'rgba(232,197,106,0.55)';
+      ctx.shadowBlur = 18;
       ctx.beginPath();
-      ctx.moveTo(judgeX, 14);
-      ctx.lineTo(judgeX, h - 14);
+      ctx.moveTo(judgeX, padY);
+      ctx.lineTo(judgeX, h - padY);
       ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -264,12 +284,11 @@
       for (const hit of tracker.hits) {
         if (hit.resolved) continue;
         const dt = hit.t - tNow;
-        const x = judgeX + (dt / approach) * (w - judgeX - 20);
-        if (x < -50 || x > w + 50) continue;
+        const x = judgeX + (dt / approach) * (w - judgeX - 28);
+        if (x < -80 || x > w + 80) continue;
         const y = laneY(h, hit.lane);
 
         if (hit.phase === 'release') {
-          // hold tail drawn from paired press — find press
           continue;
         }
 
@@ -278,40 +297,41 @@
             return r.parentId === hit.parentId && r.phase === 'release';
           });
           const endT = release ? release.t : hit.t + (hit.holdMs || 400);
-          const x2 = judgeX + ((endT - tNow) / approach) * (w - judgeX - 20);
+          const x2 = judgeX + ((endT - tNow) / approach) * (w - judgeX - 28);
           const left = Math.min(x, x2);
           const right = Math.max(x, x2);
-          ctx.fillStyle = accent + '55';
           ctx.strokeStyle = accent;
-          ctx.lineWidth = 10;
+          ctx.lineWidth = Math.max(12, 10 * sc);
           ctx.lineCap = 'round';
+          ctx.globalAlpha = 0.55;
           ctx.beginPath();
           ctx.moveTo(left, y);
           ctx.lineTo(right, y);
           ctx.stroke();
+          ctx.globalAlpha = 1;
           ctx.fillStyle = accent;
           ctx.beginPath();
-          ctx.arc(x, y, 8, 0, Math.PI * 2);
+          ctx.arc(x, y, Math.max(10, 8 * sc), 0, Math.PI * 2);
           ctx.fill();
           continue;
         }
 
         if (type === 'punch') {
-          const r = hit.kind === 'double' ? 12 : 15;
+          const r = (hit.kind === 'double' ? 14 : 18) * sc;
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI * 2);
           ctx.fillStyle = accent;
           ctx.shadowColor = accent;
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 14;
           ctx.fill();
           ctx.shadowBlur = 0;
-          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+          ctx.lineWidth = Math.max(2, 2 * sc * 0.6);
           ctx.stroke();
           if (hit.kind === 'double' && hit.hitIndex === 0) {
             ctx.fillStyle = '#fb923c';
-            ctx.font = 'bold 10px system-ui';
-            ctx.fillText('×2', x + 12, y - 12);
+            ctx.font = 'bold ' + Math.round(12 * sc) + 'px system-ui';
+            ctx.fillText('×2', x + r + 4, y - r);
           }
         } else if (type === 'sword') {
           ctx.save();
@@ -319,20 +339,21 @@
           if (hit.dir === 'up' || hit.dir === 'down') ctx.rotate(hit.dir === 'up' ? -1.2 : 1.2);
           else if (hit.dir === 'left') ctx.rotate(3.0);
           else ctx.rotate(-0.5);
-          const len = 46;
+          const len = 52 * sc;
+          const thick = Math.max(5, 6 * sc * 0.7);
           ctx.fillStyle = accent;
           ctx.shadowColor = accent;
-          ctx.shadowBlur = 8;
-          ctx.fillRect(-3, -len / 2, 6, len);
+          ctx.shadowBlur = 12;
+          ctx.fillRect(-thick / 2, -len / 2, thick, len);
           ctx.shadowBlur = 0;
           ctx.fillStyle = 'rgba(255,255,255,0.4)';
-          ctx.fillRect(-1, -len / 2, 2, len);
+          ctx.fillRect(-1.5, -len / 2, 3, len);
           ctx.restore();
           if (hit.dir) {
             ctx.fillStyle = '#e8ecf4';
-            ctx.font = 'bold 14px system-ui';
+            ctx.font = 'bold ' + Math.round(18 * sc) + 'px system-ui';
             ctx.textAlign = 'center';
-            ctx.fillText(DIR_ARROW[hit.dir] || '', x, y - 28);
+            ctx.fillText(DIR_ARROW[hit.dir] || '', x, y - 32 * sc);
             ctx.textAlign = 'start';
           }
         } else {
@@ -340,20 +361,20 @@
           ctx.save();
           ctx.translate(x, y);
           ctx.rotate(Math.PI / 4);
-          const s = hit.kind === 'burst' ? 9 : 12;
+          const s = (hit.kind === 'burst' ? 11 : 14) * sc;
           ctx.fillStyle = accent;
           ctx.shadowColor = accent;
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 14;
           ctx.fillRect(-s, -s, s * 2, s * 2);
           ctx.shadowBlur = 0;
           ctx.restore();
           if ((hit.kind === 'combo' || hit.kind === 'burst') && hit.hitIndex === 0) {
             ctx.fillStyle = hit.kind === 'burst' ? '#f472b6' : '#fb923c';
-            ctx.font = 'bold 10px system-ui';
+            ctx.font = 'bold ' + Math.round(12 * sc) + 'px system-ui';
             ctx.fillText(
               (hit.kind === 'burst' ? 'BURST×' : '×') + (hit.comboCount || ''),
-              x + 14,
-              y - 14
+              x + 16 * sc,
+              y - 16 * sc
             );
           }
         }
@@ -370,15 +391,16 @@
         }
         ctx.globalAlpha = p.life / 14;
         ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, 3, 3);
+        const ps = Math.max(3, 3 * sc * 0.5);
+        ctx.fillRect(p.x, p.y, ps, ps);
         ctx.globalAlpha = 1;
       }
 
       if (!playing) {
         ctx.fillStyle = '#8b95a8';
-        ctx.font = '12px system-ui';
+        ctx.font = Math.round(14 * Math.min(sc, 1.4)) + 'px system-ui';
         ctx.textAlign = 'center';
-        ctx.fillText(withChrome ? '按 Start 開始' : '…', w / 2, h - 12);
+        ctx.fillText(withChrome ? '按 Start 開始' : '…', w / 2, h - Math.max(28, padY));
         ctx.textAlign = 'start';
       }
     }
@@ -414,8 +436,8 @@
             ? '#fbbf24'
             : '#f87171';
       const w = canvas.clientWidth || 520;
-      const h = canvas.clientHeight || 180;
-      spawnBurst(color, Math.floor(w * 0.2), laneY(h, out.hit.lane));
+      const h = canvas.clientHeight || Math.max(240, window.innerHeight || 540);
+      spawnBurst(color, Math.floor(w * 0.22), laneY(h, out.hit.lane));
       updateHud();
       if (typeof options.onJudge === 'function') options.onJudge(out);
       finishIfDone();
@@ -491,7 +513,7 @@
       pointerDownAt = { x: e.clientX, y: e.clientY, t: performance.now() };
       const rect = canvas.getBoundingClientRect();
       const relY = e.clientY - rect.top;
-      const h = rect.height || 180;
+      const h = rect.height || Math.max(240, window.innerHeight || 540);
       let lane;
       if (relY < h * 0.33) lane = 0;
       else if (relY > h * 0.66) lane = 2;

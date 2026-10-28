@@ -43,8 +43,6 @@
     el.btnRestart = $('btn-restart');
     el.btnMute = $('btn-mute');
     el.chartOverlay = $('chart-overlay');
-    el.chartTypeLabel = $('chart-type-label');
-    el.chartHint = $('chart-hint');
     el.chartMount = $('chart-mount');
     el.beatInfo = $('beat-info');
     el.beatCounter = $('beat-counter');
@@ -230,22 +228,21 @@
     el.fighterPlayer.classList.remove('dimmed');
     el.fighterPlayer.classList.add('emphasized');
     el.moveBadge.hidden = true;
+    el.telegraph.hidden = true;
+    if (el.telegraphBanner) el.telegraphBanner.hidden = true;
 
-    el.chartTypeLabel.textContent = move.label;
-    el.chartHint.textContent = 'Space / 點擊 · ' + move.label;
     el.chartOverlay.hidden = false;
     if (el.app) el.app.classList.add('chart-open');
     audio('chartOpen');
 
     state.phase = 'player_block';
 
-    // Prefer CareerCharts.start directly; bridge wraps if needed
+    // Prefer CareerCharts.start directly; use engine default windows (±40/±100)
     if (window.CareerCharts && typeof window.CareerCharts.start === 'function') {
       if (window.RhythmCharts && window.RhythmCharts.destroy) window.RhythmCharts.destroy();
       window._boutChartSession = window.CareerCharts.start({
         type: move.type,
         container: el.chartMount,
-        windows: { perfectMs: 55, goodMs: 120 },
         onComplete: function (result) {
           window._boutChartSession = null;
           onChartComplete({

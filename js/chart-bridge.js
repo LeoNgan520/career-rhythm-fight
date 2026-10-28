@@ -36,8 +36,6 @@
       session = global.CareerCharts.start({
         type: mapped,
         container: mount,
-        // Slightly generous for demo click-through; ChartUI defaults still apply if omitted
-        windows: { perfectMs: 55, goodMs: 120 },
         onComplete: function (result) {
           session = null;
           cb({
